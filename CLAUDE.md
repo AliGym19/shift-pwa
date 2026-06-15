@@ -27,11 +27,12 @@ file means silent overwrites and conflicts. Your lane is git, deploy, and diagno
 not app code. If a code change is needed, say so; don't make it here.
 
 ## Deploy flow
-- Current: `git add → commit → push → vercel --prod` (manual deploy).
-- Auto-deploy is **pending one browser step**: the Vercel GitHub App must be authorized on
-  the AliGym19 account (github.com/apps/vercel → grant `shift-pwa`). `vercel git connect`
-  fails until then — that's expected, not a bug to keep retrying. Once authorized, push to
-  `main` auto-deploys and the manual `vercel --prod` goes away.
+- **Auto-deploy is live.** `git add → commit → push origin main` — Vercel builds and aliases
+  `shift-pwa.vercel.app` automatically within ~1 min. Do NOT run `vercel --prod`; the repo is
+  git-connected, so a manual CLI deploy fights the git source. Git-triggered deploys get a
+  `shift-pwa-git-main-…` alias — that alias is the proof the webhook fired.
+- After pushing, verify: `curl -fsSL "https://shift-pwa.vercel.app/index.html?cb=$(date +%s)"`
+  and diff against the local `index.html` (expect byte-identical).
 - When shipping a new `index.html`, bump `CACHE` in `sw.js` if asset caching changed, so
   clients pull the update instead of serving a stale copy.
 
