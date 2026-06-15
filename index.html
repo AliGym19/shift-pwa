@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16201B">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Shift Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="vendor/tesseract/tesseract.min.js"></script>
+<style>
+  :root{
+    --paper:#F4F6F2; --card:#fff; --ink:#16201B; --ink-soft:#5A665F;
+    --line:#DDE3DC; --green:#0B7A3B; --green-soft:#E5F2E9;
+    --red:#A3322B; --amber:#C8821E; --mono:'SF Mono',ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);
+    padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+  .wrap{max-width:560px;margin:0 auto;padding:0 14px}
+  header{background:var(--ink);color:#fff;padding:20px 0 18px;margin-bottom:16px}
+  .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#9FB3A6}
+  h1{font-size:21px;margin-top:2px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+  .stat .v{font-family:var(--mono);font-size:19px;font-weight:700}
+  .stat .l{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#9FB3A6}
+  .stat .e{font-family:var(--mono);font-size:10px;color:#9FB3A6}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+  .label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:5px}
+  input,textarea,select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;
+    background:var(--paper);font-family:var(--mono);font-size:14px;color:var(--ink)}
+  textarea{min-height:120px;resize:vertical}
+  .row{display:flex;gap:10px}
+  .row>div{flex:1}
+  .field{margin-bottom:12px}
+  button{padding:12px 16px;border-radius:8px;border:none;background:var(--green);color:#fff;
+    font-family:var(--sans);font-size:14px;font-weight:600;width:100%;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+  button.danger{background:transparent;border:1px solid var(--red);color:var(--red)}
+  button.sm{width:auto;padding:8px 12px;font-size:13px}
+  .btnrow{display:flex;gap:8px;margin-top:10px}
+  .dashed{border-top:2px dashed var(--line);margin:14px 0}
+  .err{border-color:var(--red);color:var(--red);font-size:14px}
+  .week-head{display:flex;justify-content:space-between;align-items:center;padding:11px 14px;background:var(--green-soft);
+    font-family:var(--mono);font-size:12px;font-weight:700;flex-wrap:wrap;gap:4px}
+  .shift{border-top:1px solid var(--line);padding:11px 14px;font-family:var(--mono);font-size:13px;cursor:pointer}
+  .shift .top{display:flex;justify-content:space-between;gap:8px}
+  .shift .meta{color:var(--ink-soft)}
+  .detail{padding:0 14px 12px;font-family:var(--mono);font-size:12px;color:var(--ink-soft);line-height:1.8}
+  .bar{height:5px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:8px}
+  .bar>i{display:block;height:100%}
+  .barlabel{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--ink-soft);margin-top:4px}
+  .bl-open{color:var(--amber)} .bl-done{color:var(--green)}
+  .co{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+  .brk{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--ink);margin-top:8px}
+  .brk input{width:auto}
+  .coerr{color:var(--red);font-family:var(--mono);font-size:12px;margin-top:6px}
+  .good{color:var(--green)} .bad{color:var(--red)}
+  nav{position:fixed;bottom:0;left:0;right:0;background:var(--ink);display:flex;
+    padding-bottom:env(safe-area-inset-bottom);z-index:10}
+  nav button{flex:1;background:none;border:none;color:#9FB3A6;font-family:var(--mono);font-size:11px;
+    letter-spacing:.08em;text-transform:uppercase;padding:16px 4px;border-radius:0}
+  nav button.on{color:#fff;border-top:2px solid var(--green)}
+  .empty{text-align:center;color:var(--ink-soft);padding:36px 16px;font-size:14px}
+  #dropzone{border:2px dashed var(--line);border-radius:10px;padding:28px 16px;text-align:center;
+    font-family:var(--mono);font-size:13px;color:var(--ink-soft);cursor:pointer;line-height:1.6;
+    transition:border-color .15s,background .15s}
+  #dropzone.drag{border-color:var(--green);background:var(--green-soft)}
+  .hide{display:none}
+  .money{color:var(--green)}
+  /* invoice print view */
+  #invoice-sheet{background:#fff;border:1px solid var(--line);border-radius:10px;padding:24px;font-family:var(--mono);font-size:12px;line-height:1.7}
+  #invoice-sheet h2{font-family:var(--sans);font-size:20px;margin-bottom:2px}
+  #invoice-sheet table{width:100%;border-collapse:collapse;margin:14px 0}
+  #invoice-sheet th{text-align:left;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink-soft);border-bottom:2px solid var(--ink);padding:6px 4px}
+  #invoice-sheet td{padding:7px 4px;border-bottom:1px dashed var(--line)}
+  #invoice-sheet .tot td{border-bottom:none;border-top:2px solid var(--ink);font-weight:700;font-size:14px}
+  #invoice-sheet .right{text-align:right}
+  .inv-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+  .inv-name{font-family:var(--sans);font-weight:700;font-size:15px}
+  .inv-title{font-family:var(--sans);font-weight:700;font-size:22px;letter-spacing:.06em}
+  .inv-meta{display:flex;justify-content:space-between;gap:16px;margin-top:16px;flex-wrap:wrap}
+  .inv-nums{text-align:right;display:flex;gap:18px}
+  .inv-billto{margin-top:14px}
+  .inv-footer{margin-top:16px;color:var(--ink-soft);font-size:11px;line-height:1.5}
+  .inv-in{border:none;background:transparent;width:62px;text-align:right;font-family:inherit;font-size:inherit;color:inherit;padding:0}
+  .inv-in:focus{outline:1px solid var(--line)}
+  @media print{
+    body{padding:0;background:#fff}
+    body>*{display:none!important}
+    #print-root{display:block!important;padding:24px}
+    #print-root #invoice-sheet{border:none;padding:0}
+  }
+</style>
+</head>
+<body>
+
+<header><div class="wrap">
+  <div class="eyebrow">Route log · invoice verification</div>
+  <h1>Shift Tracker</h1>
+  <div class="stats" id="stats"></div>
+</div></header>
+
+<div class="wrap">
+  <div id="errbox" class="card err hide"></div>
+
+  <!-- ════════ LOG TAB ════════ -->
+  <section id="tab-log">
+    <div class="card" id="intake">
+      <div id="dropzone" onclick="document.getElementById('photo-in').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="event.preventDefault();this.classList.remove('drag');dropIn(event)">
+        <div style="font-size:26px">📷</div>
+        <div>Drop a route screenshot here<br>or tap to pick from camera roll</div>
+      </div>
+      <input type="file" id="photo-in" accept="image/*" class="hide" onchange="photoIn(this)">
+      <div id="photo-busy" class="hide" style="margin-top:12px;font-family:var(--mono);font-size:13px;color:var(--ink-soft)">Reading screenshot…</div>
+      <button class="ghost" style="margin-top:12px" onclick="manualDraft()">Enter manually</button>
+    </div>
+
+    <div class="card hide" id="confirm" style="border-color:var(--green)">
+      <div class="label" style="color:var(--green)">Confirm shift before saving</div>
+      <div class="row field" style="margin-top:8px">
+        <div><div class="label">Date DD/MM/YY</div><input id="f-date" placeholder="11/06/26"></div>
+        <div><div class="label">Total time</div><input id="f-total" placeholder="10:56"></div>
+      </div>
+      <div class="row field">
+        <div><div class="label">Start</div><input id="f-start" placeholder="06:41"></div>
+        <div><div class="label">Break</div><input id="f-break" placeholder="0:30"></div>
+      </div>
+      <div class="row field">
+        <div><div class="label">Route code</div><input id="f-code" placeholder="STPM142"></div>
+        <div><div class="label">Route no.</div><input id="f-route" placeholder="143"></div>
+      </div>
+      <div class="field"><div class="label">First drop</div><input id="f-firstdrop" placeholder="HA8 8GT"></div>
+      <div class="field"><div class="label">Last drop</div><input id="f-lastdrop" placeholder="NW10 8UG"></div>
+      <div class="field"><div class="label">Notes</div><input id="f-notes" placeholder="optional"></div>
+      <div class="dashed"></div>
+      <div class="btnrow" style="margin-top:0">
+        <button onclick="saveDraft()">Save shift</button>
+        <button class="ghost" onclick="discardDraft()">Discard</button>
+      </div>
+    </div>
+
+    <div id="weeks"></div>
+  </section>
+
+  <!-- ════════ INVOICE TAB ════════ -->
+  <section id="tab-invoice" class="hide">
+    <div id="inv-onboard" class="card hide" style="border-color:var(--amber);font-family:var(--mono);font-size:13px;line-height:1.6"></div>
+    <div class="card">
+      <div class="label">Generate invoice</div>
+      <div class="field" style="margin-top:8px">
+        <div class="label">Week (Mon–Sun)</div>
+        <select id="inv-week"></select>
+      </div>
+      <button onclick="buildInvoice()">Generate</button>
+    </div>
+    <div id="invoice-out" class="hide">
+      <div id="invoice-sheet"></div>
+      <div class="btnrow">
+        <button onclick="window.print()">Print / save as PDF</button>
+        <button class="ghost" onclick="openSendReview()">Send by email</button>
+      </div>
+      <div id="send-review" class="card hide" style="margin-top:12px">
+        <div class="label">Review &amp; share</div>
+        <div class="field" style="margin-top:8px"><div class="label">Message (Gmail uses this as the body)</div><textarea id="em-body" style="min-height:90px"></textarea></div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin-bottom:10px">📎 invoice-<span id="em-att"></span>.pdf — tap “Print / save as PDF” above to eyeball it first.<br>Send opens the share sheet: pick <strong>Gmail</strong>, set the recipient (<span id="send-recip"></span>) and send there.</div>
+        <div class="btnrow">
+          <button onclick="confirmSend()">Send to Gmail</button>
+          <button class="ghost" onclick="$('send-review').classList.add('hide')">Cancel</button>
+        </div>
+      </div>
+      <div id="send-status" style="margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--ink-soft)"></div>
+    </div>
+  </section>
+
+  <!-- ════════ SETTINGS TAB ════════ -->
+  <section id="tab-settings" class="hide">
+    <div class="card">
+      <div class="label">Pay</div>
+      <div class="row field" style="margin-top:8px">
+        <div><div class="label">Rate £/hour</div><input id="s-rate" inputmode="decimal" placeholder="e.g. 13.50"></div>
+        <div><div class="label">Next invoice no.</div><input id="s-invno" inputmode="numeric" placeholder="2"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="label">Your details (invoice "From")</div>
+      <div class="field" style="margin-top:8px"><div class="label">Name</div><input id="s-name"></div>
+      <div class="field"><div class="label">Address</div><textarea id="s-addr" style="min-height:60px"></textarea></div>
+      <div class="field"><div class="label">UTR / reference (optional)</div><input id="s-utr"></div>
+    </div>
+    <div class="card">
+      <div class="label">Client (invoice "To")</div>
+      <div class="field" style="margin-top:8px"><div class="label">Company</div><input id="s-client" placeholder="Client company name"></div>
+      <div class="field"><div class="label">Client address</div><textarea id="s-client-addr" style="min-height:60px"></textarea></div>
+    </div>
+    <div class="card">
+      <div class="label">Payment details (shown on invoice)</div>
+      <div class="field" style="margin-top:8px"><div class="label">Bank details / payment terms</div>
+        <textarea id="s-bank" style="min-height:60px" placeholder="Account name, sort code, account no. Payment within 7 days."></textarea></div>
+    </div>
+    <div class="card">
+      <div class="label">WhatsApp import (optional)</div>
+      <div class="field" style="margin-top:8px">
+        <div class="label">Anthropic API key</div>
+        <input id="s-key" type="password" placeholder="sk-ant-… (stored on this device only)">
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft)">
+        Screenshots now parse on your device — no key needed. This key is only used to read WhatsApp chat exports below.
+      </div>
+    </div>
+    <div class="card">
+      <div class="label">Invoice email</div>
+      <div class="field" style="margin-top:8px"><div class="label">Client's email (reminder — who to send to)</div>
+        <input id="s-sendto" inputmode="email" placeholder="jordan@…"></div>
+      <div class="field"><div class="label">Pre-made message · placeholders: {no} {period} {hours} {amount}</div>
+        <textarea id="s-msg" style="min-height:80px" placeholder="Hi, please find attached invoice {no} for the period {period} — {hours} at the agreed rate, total {amount}. Thanks"></textarea></div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft)">
+        Send opens your share sheet — pick Gmail, the invoice PDF is attached, then set the recipient and send in Gmail.
+      </div>
+    </div>
+    <div class="card">
+      <div class="label">Feedback</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin-top:6px">Questions or feedback on the app? Message me directly.</div>
+      <button onclick="openFeedback()" style="margin-top:10px">Message on WhatsApp</button>
+    </div>
+    <div class="card">
+      <div class="label">Import past shifts</div>
+      <div class="field" style="margin-top:8px"><div class="label">Your name / tag in the group (filters messages)</div>
+        <input id="s-tag" placeholder="Ali"></div>
+      <div class="btnrow" style="margin-top:0">
+        <button class="ghost" onclick="document.getElementById('wa-in').click()">WhatsApp export (.txt)</button>
+        <button class="ghost" onclick="document.getElementById('json-in').click()">Seed file (.json)</button>
+      </div>
+      <input type="file" id="wa-in" accept=".txt,text/plain" class="hide" onchange="importWhatsApp(this)">
+      <input type="file" id="json-in" accept=".json,application/json" class="hide" onchange="importJSON(this)">
+      <div id="import-status" style="margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--ink-soft)"></div>
+    </div>
+    <button onclick="saveSettings()">Save settings</button>
+    <div class="btnrow">
+      <button class="ghost" onclick="exportJSON()">Backup all shifts (JSON)</button>
+      <button class="ghost" onclick="exportCSV()">Export (CSV)</button>
+    </div>
+    <div class="btnrow"><button class="danger" onclick="clearAll()">Clear all shifts</button></div>
+  </section>
+</div>
+
+<div id="print-root" style="display:none"></div>
+
+<nav>
+  <button id="nav-log" class="on" onclick="show('log')">Log</button>
+  <button id="nav-invoice" onclick="show('invoice')">Invoice</button>
+  <button id="nav-settings" onclick="show('settings')">Settings</button>
+</nav>
+
+<script>
+/* ───────── state ───────── */
+const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } };
+let shifts = load("shifts-v1", []);
+let settings = load("settings-v1", {});
+settings = Object.assign({ rate:"", invNo:1, name:"", addr:"", utr:"", client:"", clientAddr:"", bank:"", key:"", sendTo:"", sendFrom:"", msg:"", webhook:"", tag:"" }, settings);
+let lastInvoice = null;
+let invRows = [];
+let drops = []; // draft drops buffer
+const DEFAULT_CREW = ""; // optional "worked with"; blank by default for new users
+const WA_NUMBER = "447000000000"; // ← set to your WhatsApp number, intl format, no "+" (e.g. 447911123456)
+function openFeedback(){
+  window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent("Shift Tracker feedback: ")}`, "_blank");
+}
+const save = () => localStorage.setItem("shifts-v1", JSON.stringify(shifts));
+const saveS = () => localStorage.setItem("settings-v1", JSON.stringify(settings));
+
+/* ───────── time/date utils ───────── */
+const hmToMin = hm => { const m = String(hm||"").match(/(\d{1,2}):(\d{2})/); return m ? +m[1]*60 + +m[2] : 0 };
+const minToHM = m => `${Math.floor(m/60)}:${String(m%60).padStart(2,"0")}`;
+const minToWords = m => `${Math.floor(m/60)}h ${String(m%60).padStart(2,"0")}m`;
+const gbp = n => "£" + n.toFixed(2);
+const earnings = min => { const r = parseFloat(settings.rate); return r ? min/60*r : null };
+const parseUK = s => { const m = String(s||"").match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); if(!m) return null;
+  let y = +m[3]; if(y<100) y+=2000; return new Date(y, +m[2]-1, +m[1]) };
+const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const fmt = d => d.toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
+const fmtFull = d => d.toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});
+const weekStart = d => { const x = new Date(d); x.setDate(x.getDate() - (x.getDay()+6)%7); x.setHours(0,0,0,0); return x };
+const weekLabel = ws => { const we = new Date(ws); we.setDate(we.getDate()+6);
+  const f = d => d.toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+  return `${f(ws)} – ${f(we)} ${we.getFullYear()}` };
+
+/* ───────── parsing ───────── */
+
+// Lazily-created OCR worker. All files served locally from vendor/tesseract,
+// so this runs with no API key and no network once the app is cached.
+// OEM 1 (LSTM) is pinned so only the bundled -lstm cores are requested.
+let _ocr = null;
+async function ocr(){
+  if (_ocr) return _ocr;
+  _ocr = await Tesseract.createWorker("eng", 1, {
+    workerPath: "vendor/tesseract/worker.min.js",
+    corePath:   "vendor/tesseract/",
+    langPath:   "vendor/tesseract/",
+    gzip: true,
+    logger: m => { if (m.status === "recognizing text")
+      $("photo-busy").textContent = `Reading screenshot… ${Math.round(m.progress*100)}%`; }
+  });
+  return _ocr;
+}
+
+// OCR'd route-email text -> the same draft shape openDraft() expects.
+// Confirm card catches anything OCR misreads.
+function parseRouteText(text){
+  const t = (text || "").replace(/\u00a0/g, " ");
+  const grab = re => (t.match(re) || [])[1] || "";
+
+  // Crew code sits right before "Route N" (STPM142, PBV261BW, YAV304J).
+  // 3+ leading letters stops it grabbing a postcode outward like "PE31".
+  const code  = grab(/\b([A-Z]{3,5}\d{2,4}[A-Z]{0,2})\s+Route\b/i)
+             || grab(/\b([A-Z]{3,5}\d{2,4}[A-Z]{0,2})\b/);
+  const route = grab(/Route\s+(\d+)/i);
+  const date  = grab(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/);          // DD/MM/YY, as openDraft wants
+  const total = grab(/Total\s*Time:?\s*(\d{1,2}:\d{2})/i);
+  const start = grab(/suggested\s*start\s*time\s*is:?\s*(\d{1,2}:\d{2})/i);
+  const brk   = grab(/break[^\d]{0,12}(\d{1,2}:\d{2})/i);          // best-effort; blank is fine
+
+  const windows = t.match(/\d{1,2}:\d{2}\s*[-–]\s*\d{1,2}:\d{2}/g) || [];
+  const pcs = (t.match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/g) || [])
+    .map(p => p.replace(/\s+/g, " ").trim());
+
+  return {
+    code, route, date, total, start, brk,
+    drops: pcs.length ? [{ postcode: pcs[0], window: (windows[0] || "").replace(/\s/g,"") }] : [],
+    lastDrop: pcs.length ? pcs[pcs.length - 1] : ""
+  };
+}
+
+/* ───────── ui ───────── */
+const $ = id => document.getElementById(id);
+const err = msg => { const e = $("errbox"); if(!msg){e.classList.add("hide");return}
+  e.textContent = msg; e.classList.remove("hide") };
+const toggle = id => $(id).classList.toggle("hide");
+function show(tab){
+  for (const t of ["log","invoice","settings"]){
+    $("tab-"+t).classList.toggle("hide", t!==tab);
+    $("nav-"+t).classList.toggle("on", t===tab);
+  }
+  err("");
+  if (tab==="invoice"){
+    fillWeekPicker();
+    const need = !settings.name || !settings.addr || !settings.bank || !parseFloat(settings.rate);
+    const b = $("inv-onboard");
+    b.classList.toggle("hide", !need);
+    if (need) b.innerHTML = `Add your name, address, bank details and rate in Settings to generate a complete invoice. <button class="ghost sm" style="margin-top:8px" onclick="show('settings')">Open Settings</button>`;
+  }
+  if (tab==="settings") fillSettings();
+}
+
+function openDraft(p){
+  drops = p.drops || [];
+  $("f-date").value = p.date||""; $("f-total").value = p.total||"";
+  $("f-start").value = p.start||""; $("f-break").value = p.brk||"";
+  $("f-code").value = p.code||""; $("f-route").value = p.route||"";
+  $("f-firstdrop").value = (drops[0] && drops[0].postcode) || "";
+  $("f-lastdrop").value = p.lastDrop||""; $("f-notes").value = "";
+  $("confirm").classList.remove("hide"); $("intake").classList.add("hide");
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+const manualDraft = () => openDraft({});
+const discardDraft = () => { $("confirm").classList.add("hide"); $("intake").classList.remove("hide"); err("") };
+
+function dropIn(e){
+  const file = [...(e.dataTransfer?.files||[])].find(f => f.type.startsWith("image/"));
+  if (file) handlePhotoFile(file);
+}
+
+async function photoIn(input){
+  const file = input.files?.[0]; if(!file) return;
+  input.value = "";
+  handlePhotoFile(file);
+}
+
+async function handlePhotoFile(file){
+  err("");
+  const busy = $("photo-busy");
+  busy.textContent = "Reading screenshot…";
+  busy.classList.remove("hide");
+  try{
+    const w = await ocr();
+    const { data: { text } } = await w.recognize(file);
+    openDraft(parseRouteText(text));
+  }catch(e){ err("Couldn't read that screenshot: " + (e.message || e) + " — you can still enter it manually."); }
+  busy.classList.add("hide");
+}
+
+function saveDraft(){
+  const d = parseUK($("f-date").value);
+  if (!d){ err("Date needs to be DD/MM/YY."); return }
+  if (!hmToMin($("f-total").value)){ err("Total time needs to be H:MM."); return }
+  // first drop comes from its field now; keep the OCR'd delivery window attached
+  const fd = $("f-firstdrop").value.trim();
+  const dropsOut = fd ? [{ postcode: fd, window: (drops[0] && drops[0].window) || "" }] : [];
+  shifts.push({
+    id: Date.now(), dateISO: iso(d),
+    code: $("f-code").value, route: $("f-route").value,
+    total: $("f-total").value, start: $("f-start").value, brk: $("f-break").value,
+    lastDrop: $("f-lastdrop").value, crew: DEFAULT_CREW, notes: $("f-notes").value,
+    drops: dropsOut
+  });
+  shifts.sort((a,b)=> a.dateISO < b.dateISO ? 1 : -1);
+  save(); discardDraft(); render();
+}
+
+function delShift(id){
+  shifts = shifts.filter(s=>s.id!==id); save(); render();
+}
+
+/* ───────── aggregates & render ───────── */
+function groupWeeks(){
+  const map = new Map();
+  for (const s of shifts){
+    const k = iso(weekStart(new Date(s.dateISO)));
+    if (!map.has(k)) map.set(k, {start:new Date(k), shifts:[], min:0});
+    const w = map.get(k); w.shifts.push(s); w.min += hmToMin(s.total);
+  }
+  return [...map.values()].sort((a,b)=>b.start-a.start);
+}
+
+/* ───────── close-out: actual hours vs paid clock time ───────── */
+// Returns null if not closed out / invalid. Break is ADDED on top of the
+// paid clock time for the schedule, and SUBTRACTED from the actual window for worked time.
+function closeout(s){
+  if (!s.aStart || !s.aEnd) return null;
+  let startM = hmToMin(s.aStart), endM = hmToMin(s.aEnd);
+  if (endM < startM) endM += 24*60;                 // finished after midnight
+  const brkM   = s.tookBreak ? hmToMin(s.brk||"0:00") : 0;
+  const workedM = endM - startM - brkM;
+  if (workedM <= 0) return null;
+  const paidM  = hmToMin(s.total);                  // clock time = what you're paid on
+  const estEndM = startM + paidM + brkM;            // scheduled finish (break on top)
+  const deltaM = estEndM - endM;                    // + = early, - = over
+  const r = parseFloat(settings.rate);
+  const perHour = r ? (paidM * r) / workedM : null; // (paidM/60*r)/(workedM/60)
+  return { workedM, paidM, deltaM, perHour, rate: r || null };
+}
+
+function coFormHTML(s){
+  const needRate = !parseFloat(settings.rate);
+  return `
+    <div class="row">
+      <div><div class="label">Actual start</div><input id="cs-${s.id}" value="${s.aStart||s.start||""}" placeholder="06:23"></div>
+      <div><div class="label">Actual end</div><input id="ce-${s.id}" value="${s.aEnd||""}" placeholder="16:30"></div>
+    </div>
+    <button class="ghost sm" style="margin-top:8px" onclick="stampNow(${s.id})">Finished now</button>
+    <label class="brk"><input type="checkbox" id="cb-${s.id}" ${s.tookBreak?"checked":""}> Took the ${s.brk||"0:30"} break</label>
+    ${needRate?`<div class="field" style="margin-top:8px"><div class="label">Your £/hour — set once to unlock pay/hr</div><input id="cr-${s.id}" inputmode="decimal" placeholder="e.g. 13.50"></div>`:""}
+    <div id="cerr-${s.id}" class="coerr"></div>
+    <button class="sm" style="margin-top:8px" onclick="saveClose(${s.id})">Save finish</button>`;
+}
+
+function coBreakdownHTML(s){
+  const co = closeout(s);
+  if (!co) return `Couldn't compute — <button class="ghost sm" onclick="editClose(${s.id})">edit times</button>`;
+  const rateLine = co.perHour!=null
+    ? `Effective: <strong class="${co.perHour>=co.rate?"good":"bad"}">${gbp(co.perHour)}/hr</strong> <span style="color:var(--ink-soft)">(base ${gbp(co.rate)})</span>`
+    : `Effective £/hr — set your rate in Settings`;
+  return `
+    Worked: <strong>${minToWords(co.workedM)}</strong> · Clock/paid: <strong>${minToWords(co.paidM)}</strong><br>
+    ${co.deltaM>=0?`Finished <strong class="good">${minToWords(co.deltaM)} early</strong>`:`Ran <strong class="bad">${minToWords(-co.deltaM)} over</strong>`}<br>
+    Actual: ${s.aStart}–${s.aEnd}${s.tookBreak?` (incl. ${s.brk||"0:30"} break)`:" (no break)"}<br>
+    ${rateLine}<br>
+    <button class="ghost sm" style="margin-top:8px" onclick="editClose(${s.id})">Edit finish time</button>`;
+}
+
+function stampNow(id){ const d=new Date(); $("ce-"+id).value = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
+function editClose(id){ const s=shifts.find(x=>x.id===id); if(s) $("c-"+id).innerHTML = coFormHTML(s); }
+function saveClose(id){
+  const s = shifts.find(x=>x.id===id); if(!s) return;
+  const aStart = $("cs-"+id).value.trim(), aEnd = $("ce-"+id).value.trim();
+  if (!hmToMin(aStart) || !hmToMin(aEnd)){ $("cerr-"+id).textContent = "Need actual start and end as H:MM."; return }
+  const rEl = $("cr-"+id);
+  if (rEl && rEl.value.trim()){ settings.rate = rEl.value.trim(); saveS(); }   // onboarding event A
+  s.aStart = aStart; s.aEnd = aEnd; s.tookBreak = $("cb-"+id).checked;
+  save(); render();
+}
+function clearAll(){
+  if (!confirm("Delete ALL shifts? Back up first (JSON export) — this can't be undone.")) return;
+  shifts = []; save(); render(); show("log");
+}
+
+function render(){
+  // stats
+  const now = new Date(), ws = weekStart(now),
+    ms = new Date(now.getFullYear(),now.getMonth(),1), ys = new Date(now.getFullYear(),0,1);
+  const sum = from => shifts.filter(s=>new Date(s.dateISO)>=from).reduce((a,s)=>a+hmToMin(s.total),0);
+  const all = shifts.reduce((a,s)=>a+hmToMin(s.total),0);
+  $("stats").innerHTML = [["Week",sum(ws)],["Month",sum(ms)],["Year",sum(ys)],["All",all]]
+    .map(([l,m])=>{ const e = earnings(m);
+      return `<div class="stat"><div class="l">${l}</div><div class="v">${minToHM(m)}</div>${e!=null?`<div class="e">${gbp(e)}</div>`:""}</div>`}).join("");
+
+  // weeks
+  const weeks = groupWeeks();
+  $("weeks").innerHTML = !weeks.length
+    ? `<div class="card empty">No shifts yet. Drop a route screenshot above to log your first one.</div>`
+    : weeks.map(w => {
+        const e = earnings(w.min);
+        return `<div class="card" style="padding:0;overflow:hidden">
+          <div class="week-head"><span>${weekLabel(w.start)}</span>
+            <span>${w.shifts.length} shift${w.shifts.length===1?"":"s"} · <strong>${minToWords(w.min)}</strong>${e!=null?` · <strong class="money">${gbp(e)}</strong>`:""}</span></div>
+          ${w.shifts.map(s=>{
+            const open = !s.aEnd;
+            return `
+            <div class="shift" onclick="toggle('d-${s.id}')">
+              <div class="top"><span>${fmt(new Date(s.dateISO))} <span class="meta">· ${s.code||""} R${s.route||"—"}</span></span>
+                <strong>${s.total||"—"}</strong></div>
+              <div class="bar"><i style="width:${open?80:100}%;background:${open?"var(--amber)":"var(--green)"}"></i></div>
+            </div>
+            <div class="detail hide" id="d-${s.id}">
+              ${open?`<div style="color:var(--amber);margin-bottom:6px">Needs finish time</div>`:""}
+              Start: ${s.start||"—"} · Break: ${s.brk||"—"}<br>
+              Crew: ${s.crew||"—"}<br>
+              ${s.drops?.length?`First drop: ${s.drops.map(d=>`${d.postcode}${d.window?` (${d.window})`:""}`).join(", ")}<br>`:""}
+              Last drop: ${s.lastDrop||"—"}${s.notes?`<br>Notes: ${s.notes}`:""}
+              <div class="btnrow">
+                <button class="sm" onclick="toggle('c-${s.id}')">${open?"Finish shift":"Info"}</button>
+                <button class="danger sm" onclick="delShift(${s.id})">Delete shift</button>
+              </div>
+              <div class="co hide" id="c-${s.id}">${open?coFormHTML(s):coBreakdownHTML(s)}</div>
+            </div>`}).join("")}
+        </div>`}).join("");
+}
+
+/* ───────── invoice ─────────
+   TEMPLATE PLACEHOLDER — renderInvoiceHTML() is the single swap point.
+   When Ali supplies the real template, replace only this function. */
+function fillWeekPicker(){
+  const weeks = groupWeeks();
+  $("inv-week").innerHTML = weeks.length
+    ? weeks.map(w=>`<option value="${iso(w.start)}">${weekLabel(w.start)} — ${minToWords(w.min)}</option>`).join("")
+    : `<option value="">No weeks logged yet</option>`;
+}
+
+function renderInvoiceHTML(inv, stat=false){
+  const d = inv.date || new Date(), due = new Date(d);
+  let dl = (1 - d.getDay() + 7) % 7; if (dl === 0) dl = 7;   // next Monday after issue
+  due.setDate(d.getDate() + dl);
+  const dt = x => x.toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",year:"numeric"});
+  const num = n => (Math.round(n*100)/100).toFixed(2);
+  const rows = invRows.map((r,i)=>{
+    if (r.qty==null)
+      return `<tr><td>${r.desc}</td><td class="right">—</td><td class="right"></td><td class="right"></td><td class="right"></td><td class="right">—</td></tr>`;
+    const amt = r.qty*r.unit + (r.bonus||0) + (r.add||0);
+    const bonusCell = stat ? (r.bonus?num(r.bonus):"") : `<input class="inv-in" id="inv-bonus-${i}" inputmode="decimal" oninput="recalcInvoice()" value="${r.bonus||""}">`;
+    const addCell   = stat ? (r.add?num(r.add):"")     : `<input class="inv-in" id="inv-add-${i}" inputmode="decimal" oninput="recalcInvoice()" value="${r.add||""}">`;
+    const amtCell   = stat ? `£ ${num(amt)}` : `£ <span id="inv-amt-${i}">${num(amt)}</span>`;
+    return `<tr><td>${r.desc}</td><td class="right">${num(r.qty)}</td><td class="right">${num(r.unit)}</td>
+      <td class="right">${bonusCell}</td><td class="right">${addCell}</td><td class="right">${amtCell}</td></tr>`;
+  }).join("");
+  const total = invRows.reduce((a,r)=> a + (r.qty!=null ? r.qty*r.unit+(r.bonus||0)+(r.add||0) : 0), 0);
+  const totalCell = stat ? `£ ${num(total)}` : `£ <span id="inv-total">${num(total)}</span>`;
+  return `
+    <div class="inv-head">
+      <div><div class="inv-name">${settings.name||"—"}</div>${(settings.addr||"").replace(/\n/g,"<br>")}</div>
+      <div class="inv-title">INVOICE</div>
+    </div>
+    <div class="inv-meta">
+      <div>${settings.bank?`<div class="label">Bank details</div>${settings.bank.replace(/\n/g,"<br>")}`:""}</div>
+      <div class="inv-nums">
+        <div><div class="label">Invoice #</div>${inv.number}</div>
+        <div><div class="label">Date</div>${dt(d)}</div>
+        <div><div class="label">Due date</div>${dt(due)}</div>
+      </div>
+    </div>
+    <div class="inv-billto"><div class="label">Bill to</div>${settings.billTo?settings.billTo+"<br>":""}${settings.client||""}</div>
+    <table>
+      <tr><th>Description</th><th class="right">Qty</th><th class="right">Unit price</th><th class="right">Bonus</th><th class="right">Additional pay</th><th class="right">Amount</th></tr>
+      ${rows}
+      <tr class="tot"><td colspan="5">Total</td><td class="right">${totalCell}</td></tr>
+    </table>
+    ${settings.footer?`<div class="inv-footer">${settings.footer.replace(/\n/g,"<br>")}</div>`:""}`;
+}
+
+function buildInvoice(){
+  const key = $("inv-week").value;
+  if (!key){ err("Log some shifts first."); return }
+  err("");
+  const w = groupWeeks().find(w=>iso(w.start)===key);
+  const rate = parseFloat(settings.rate)||0;
+  const ws = new Date(key);
+  invRows = [];
+  for (let i=0;i<7;i++){
+    const d = new Date(ws); d.setDate(ws.getDate()+i);
+    const s = w.shifts.find(x=>x.dateISO===iso(d));
+    invRows.push({
+      desc: d.toLocaleDateString("en-GB",{weekday:"long"}) + " " + d.toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",year:"2-digit"}),
+      qty: s ? Math.round(hmToMin(s.total)/60*100)/100 : null,
+      unit: rate, bonus:0, add:0
+    });
+  }
+  const inv = { number: parseInt(settings.invNo)||1, date:new Date(), period: weekLabel(w.start) };
+  // compat fields for the email/send path
+  inv.totalMin = w.min;
+  inv.totalAmount = invRows.reduce((a,r)=> a + (r.qty!=null ? r.qty*r.unit : 0), 0);
+  inv.lines = invRows.filter(r=>r.qty!=null).map(r=>({date:r.desc, route:"", hours:r.qty.toFixed(2), amount:r.qty*r.unit}));
+  lastInvoice = inv;
+  $("invoice-sheet").innerHTML = renderInvoiceHTML(inv);
+  $("invoice-out").classList.remove("hide");
+  $("send-status").textContent = "";
+  recalcInvoice();
+  settings.invNo = (parseInt(settings.invNo)||1) + 1; saveS();
+}
+
+function recalcInvoice(){
+  let total = 0;
+  invRows.forEach((r,i)=>{
+    if (r.qty==null) return;
+    r.bonus = parseFloat($("inv-bonus-"+i)?.value)||0;
+    r.add   = parseFloat($("inv-add-"+i)?.value)||0;
+    const amt = r.qty*r.unit + r.bonus + r.add;
+    const cell = $("inv-amt-"+i); if (cell) cell.textContent = (Math.round(amt*100)/100).toFixed(2);
+    total += amt;
+  });
+  const t = $("inv-total"); if (t) t.textContent = (Math.round(total*100)/100).toFixed(2);
+  if (lastInvoice) lastInvoice.totalAmount = total;
+  if (lastInvoice) $("print-root").innerHTML = `<div id="invoice-sheet">${renderInvoiceHTML(lastInvoice, true)}</div>`;
+}
+
+/* ───────── invoice PDF + send ───────── */
+function buildPDF(inv){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const num = n => (Math.round(n*100)/100).toFixed(2);
+  const d = inv.date || new Date(), due = new Date(d);
+  let dl = (1 - d.getDay() + 7) % 7; if (dl === 0) dl = 7; due.setDate(d.getDate() + dl);
+  const dt = x => x.toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",year:"numeric"});
+
+  doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.text(settings.name||"", 20, 22);
+  doc.setFontSize(22); doc.text("INVOICE", 190, 24, {align:"right"});
+  doc.setFont("helvetica","normal"); doc.setFontSize(10);
+  let y = 28;
+  for (const l of (settings.addr||"").split("\n").filter(Boolean)){ doc.text(l,20,y); y+=5; }
+
+  const metaY = y + 6;
+  doc.setFont("helvetica","bold"); doc.text("Bank details",20,metaY);
+  doc.setFont("helvetica","normal"); let by = metaY+5;
+  for (const l of (settings.bank||"").split("\n").filter(Boolean)){ doc.text(l,20,by); by+=5; }
+  doc.setFont("helvetica","bold");
+  doc.text("Invoice #",150,metaY); doc.text("Date",150,metaY+8); doc.text("Due date",150,metaY+16);
+  doc.setFont("helvetica","normal");
+  doc.text(String(inv.number),190,metaY,{align:"right"});
+  doc.text(dt(d),190,metaY+8,{align:"right"});
+  doc.text(dt(due),190,metaY+16,{align:"right"});
+
+  y = Math.max(by, metaY+22) + 4;
+  doc.setFont("helvetica","bold"); doc.text("Bill to",20,y); y+=5; doc.setFont("helvetica","normal");
+  if (settings.billTo){ doc.text(settings.billTo,20,y); y+=5; }
+  if (settings.client){ doc.text(settings.client,20,y); y+=5; }
+  y+=5;
+
+  const C = {desc:20, qty:104, unit:126, bonus:148, add:168, amt:190};
+  doc.setFont("helvetica","bold"); doc.setFontSize(8);
+  doc.text("DESCRIPTION",C.desc,y); doc.text("QTY",C.qty,y,{align:"right"});
+  doc.text("UNIT",C.unit,y,{align:"right"}); doc.text("BONUS",C.bonus,y,{align:"right"});
+  doc.text("ADD'L",C.add,y,{align:"right"}); doc.text("AMOUNT",C.amt,y,{align:"right"});
+  y+=2; doc.line(20,y,190,y); y+=5;
+  doc.setFont("helvetica","normal"); doc.setFontSize(10);
+  let total = 0;
+  for (const r of invRows){
+    doc.text(r.desc, C.desc, y);
+    if (r.qty==null){ doc.text("—",C.amt,y,{align:"right"}); y+=6; if(y>272){doc.addPage();y=20;} continue; }
+    const amt = r.qty*r.unit + (r.bonus||0) + (r.add||0); total += amt;
+    doc.text(num(r.qty),C.qty,y,{align:"right"});
+    doc.text(num(r.unit),C.unit,y,{align:"right"});
+    if (r.bonus) doc.text(num(r.bonus),C.bonus,y,{align:"right"});
+    if (r.add)   doc.text(num(r.add),C.add,y,{align:"right"});
+    doc.text("£ "+num(amt),C.amt,y,{align:"right"});
+    y+=6; if(y>272){doc.addPage();y=20;}
+  }
+  doc.line(20,y,190,y); y+=6;
+  doc.setFont("helvetica","bold"); doc.text("TOTAL",20,y); doc.text("£ "+num(total),C.amt,y,{align:"right"}); y+=10;
+  doc.setFont("helvetica","normal"); doc.setFontSize(9);
+  for (const l of (settings.footer||"").split("\n").filter(Boolean)){
+    const wrapped = doc.splitTextToSize(l, 170); doc.text(wrapped,20,y); y += wrapped.length*5;
+  }
+  return doc;
+}
+
+const fillMsg = inv => (settings.msg || "Please find attached invoice {no} for {period}: {hours}, total {amount}.")
+  .replace("{no}", inv.number).replace("{period}", inv.period)
+  .replace("{hours}", minToWords(inv.totalMin))
+  .replace("{amount}", parseFloat(settings.rate) ? gbp(inv.totalAmount) : minToWords(inv.totalMin));
+
+function openSendReview(){
+  if (!lastInvoice){ err("Generate an invoice first."); return }
+  $("em-body").value = fillMsg(lastInvoice);
+  $("em-att").textContent = lastInvoice.number;
+  $("send-recip").textContent = settings.sendTo || "your client";
+  $("send-status").textContent = "";
+  $("send-review").classList.remove("hide");
+  $("send-review").scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+async function confirmSend(){
+  if (!lastInvoice){ err("Generate an invoice first."); return }
+  const inv = lastInvoice, status = $("send-status");
+  const subject = `Invoice ${inv.number} — ${inv.period}`;
+  const body = $("em-body").value;
+  const filename = `invoice-${inv.number}.pdf`;
+  const doc = buildPDF(inv);
+  const file = new File([doc.output("blob")], filename, { type:"application/pdf" });
+  if (navigator.canShare && navigator.canShare({ files:[file] })){
+    try{ await navigator.share({ files:[file], title: subject, text: body });
+      status.textContent = "Opened share sheet — pick Gmail and send."; $("send-review").classList.add("hide"); }
+    catch{ status.textContent = ""; }   // user cancelled the sheet
+  } else {
+    doc.save(filename);
+    status.textContent = "PDF saved to Files — open Gmail and attach it (share unsupported on this browser).";
+  }
+}
+
+/* ───────── imports ───────── */
+// merge rule: match on dateISO — fill blanks on existing shifts, create new otherwise
+function mergeShifts(incoming){
+  let added = 0, updated = 0;
+  for (const inc of incoming){
+    if (!inc.dateISO) continue;
+    const ex = shifts.find(s => s.dateISO === inc.dateISO);
+    if (ex){
+      let touched = false;
+      for (const k of ["total","start","brk","code","route","crew","lastDrop"])
+        if (!ex[k] && inc[k]){ ex[k] = inc[k]; touched = true }
+      if (touched) updated++;
+    } else {
+      shifts.push(Object.assign({ id: Date.now()+Math.random(), total:"", start:"", brk:"", code:"", route:"", crew:"", lastDrop:"", notes:"", drops:[] }, inc));
+      added++;
+    }
+  }
+  shifts.sort((a,b)=> a.dateISO < b.dateISO ? 1 : -1);
+  save(); render();
+  return { added, updated };
+}
+
+async function importWhatsApp(input){
+  const file = input.files?.[0]; if(!file) return;
+  input.value = "";
+  const status = $("import-status");
+  if (!settings.key){ status.textContent = "Add your Anthropic API key first — WhatsApp parsing uses it."; return }
+  const tag = (settings.tag || "").trim();
+  if (!tag){ status.textContent = "Set your name/tag first so I can filter the chat."; return }
+  status.textContent = "Filtering chat…";
+  const text = await file.text();
+  // keep only lines mentioning the tag (case-insensitive), cap to keep tokens sane
+  const lines = text.split("\n").filter(l => l.toLowerCase().includes(tag.toLowerCase()));
+  if (!lines.length){ status.textContent = `No messages mentioning "${tag}" found in that export.`; return }
+  const chunk = lines.slice(-400).join("\n"); // most recent 400 mentions
+  status.textContent = `Parsing ${lines.length} messages…`;
+  try{
+    const r = await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{ "Content-Type":"application/json", "x-api-key":settings.key,
+        "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
+      body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:4000,
+        messages:[{role:"user",content:`These are WhatsApp group messages where an admin assigns delivery shifts, tagging "${tag}" and a coworker. Message timestamps are [DD/MM/YYYY, ...]. Extract one record per working day for ${tag}. The shift date is the date being assigned (usually the day after the message, or stated in the message — use the message date if unclear). The crew mate is the other person tagged alongside ${tag}.
+
+Respond ONLY with a JSON array, no fences:
+[{"dateISO":"YYYY-MM-DD","crew":"coworker name","route":"route number if mentioned, else null"}]
+
+Messages:
+${chunk}`}]
+      })
+    });
+    const data = await r.json();
+    if (data.error) throw new Error(data.error.message);
+    const txt = data.content.filter(b=>b.type==="text").map(b=>b.text).join("\n");
+    const recs = JSON.parse(txt.replace(/```json|```/g,"").trim());
+    const { added, updated } = mergeShifts(recs.map(r => ({ dateISO:r.dateISO, crew:r.crew||"", route:r.route||"" })));
+    status.textContent = `Done: ${added} shifts added, ${updated} updated with crew info. Shifts without hours show — until you add their route screenshots.`;
+  }catch(e){ status.textContent = "Parse failed: " + e.message }
+}
+
+async function importJSON(input){
+  const file = input.files?.[0]; if(!file) return;
+  input.value = "";
+  const status = $("import-status");
+  try{
+    const recs = JSON.parse(await file.text());
+    const { added, updated } = mergeShifts(recs);
+    status.textContent = `Done: ${added} added, ${updated} updated.`;
+  }catch(e){ status.textContent = "Couldn't read that JSON: " + e.message }
+}
+
+
+function fillSettings(){
+  $("s-rate").value = settings.rate; $("s-invno").value = settings.invNo;
+  $("s-name").value = settings.name; $("s-addr").value = settings.addr; $("s-utr").value = settings.utr;
+  $("s-client").value = settings.client; $("s-client-addr").value = settings.clientAddr;
+  $("s-bank").value = settings.bank; $("s-key").value = settings.key;
+  $("s-sendto").value = settings.sendTo; $("s-msg").value = settings.msg; $("s-tag").value = settings.tag;
+}
+function saveSettings(){
+  settings = { ...settings,
+    rate:$("s-rate").value, invNo:$("s-invno").value||1,
+    name:$("s-name").value, addr:$("s-addr").value, utr:$("s-utr").value,
+    client:$("s-client").value, clientAddr:$("s-client-addr").value,
+    bank:$("s-bank").value, key:$("s-key").value,
+    sendTo:$("s-sendto").value, msg:$("s-msg").value, tag:$("s-tag").value };
+  saveS(); render(); err(""); show("log");
+}
+
+/* Full re-importable backup. Restores via Settings → Import past shifts → Seed file (.json). */
+function exportJSON(){
+  const blob = new Blob([JSON.stringify(shifts, null, 1)], { type:"application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `shifts-backup-${iso(new Date())}.json`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+}
+
+function exportCSV(){
+  const rows = [["date","route","total_time","start_time","break","crew","last_drop","drops"]];
+  for (const s of shifts) rows.push([s.dateISO, `${s.code} R${s.route}`, s.total, s.start, s.brk,
+    s.crew||"", s.lastDrop||"", (s.drops||[]).map(d=>d.postcode).join(" | ")]);
+  const csv = rows.map(r=>r.map(c=>`"${String(c??"").replace(/"/g,'""')}"`).join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.download = "shifts.csv"; a.click();
+}
+
+/* ───────── boot ───────── */
+// Default footer note for new users (generic; no personal data). Only set if blank.
+if (!settings.profileSeeded){
+  if (!settings.footer) settings.footer = "Thank you for your business!\nSelf-employed sub-contractor. This invoice represents a gross payment for delivery services; no deductions have been made for PAYE or National Insurance.";
+  settings.profileSeeded = true; saveS();
+}
+
+render();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
