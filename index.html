@@ -64,10 +64,10 @@
     letter-spacing:.08em;text-transform:uppercase;padding:16px 4px;border-radius:0}
   nav button.on{color:#fff;border-top:2px solid var(--green)}
   .empty{text-align:center;color:var(--ink-soft);padding:36px 16px;font-size:14px}
-  #dropzone{border:2px dashed var(--line);border-radius:10px;padding:28px 16px;text-align:center;
+  #dropzone,#inv-drop{border:2px dashed var(--line);border-radius:10px;padding:28px 16px;text-align:center;
     font-family:var(--mono);font-size:13px;color:var(--ink-soft);cursor:pointer;line-height:1.6;
     transition:border-color .15s,background .15s}
-  #dropzone.drag{border-color:var(--green);background:var(--green-soft)}
+  #dropzone.drag,#inv-drop.drag{border-color:var(--green);background:var(--green-soft)}
   .hide{display:none}
   .money{color:var(--green)}
   /* invoice print view */
@@ -181,6 +181,21 @@
 
   <!-- ════════ SETTINGS TAB ════════ -->
   <section id="tab-settings" class="hide">
+    <div class="card" style="border-color:var(--green)">
+      <div class="label" style="color:var(--green)">Quick setup</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin:6px 0 10px">
+        Already have an invoice? Drop or pick a photo of one and I'll fill in your details below — faster than typing. Nothing's saved until you tap Save, so check it first.
+      </div>
+      <div id="inv-drop" onclick="document.getElementById('inv-in').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="event.preventDefault();this.classList.remove('drag');dropInvoice(event)">
+        <div style="font-size:26px">📄</div>
+        <div>Drop an invoice here<br>or tap to pick a photo</div>
+      </div>
+      <input type="file" id="inv-in" accept="image/*" class="hide" onchange="importInvoice(this)">
+      <div id="setup-status" class="hide" style="margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--ink-soft)"></div>
+    </div>
     <div class="card">
       <div class="label">Pay</div>
       <div class="row field" style="margin-top:8px">
@@ -203,16 +218,6 @@
       <div class="label">Payment details (shown on invoice)</div>
       <div class="field" style="margin-top:8px"><div class="label">Bank details / payment terms</div>
         <textarea id="s-bank" style="min-height:60px" placeholder="Account name, sort code, account no. Payment within 7 days."></textarea></div>
-    </div>
-    <div class="card">
-      <div class="label">WhatsApp import (optional)</div>
-      <div class="field" style="margin-top:8px">
-        <div class="label">Anthropic API key</div>
-        <input id="s-key" type="password" placeholder="sk-ant-… (stored on this device only)">
-      </div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft)">
-        Screenshots now parse on your device — no key needed. This key is only used to read WhatsApp chat exports below.
-      </div>
     </div>
     <div class="card">
       <div class="label">Invoice email</div>
@@ -374,6 +379,82 @@ const discardDraft = () => { $("confirm").classList.add("hide"); $("intake").cla
 function dropIn(e){
   const file = [...(e.dataTransfer?.files||[])].find(f => f.type.startsWith("image/"));
   if (file) handlePhotoFile(file);
+}
+
+function dropInvoice(e){
+  const file = [...(e.dataTransfer?.files||[])].find(f => f.type.startsWith("image/"));
+  if (file) readInvoice(file);
+}
+async function importInvoice(input){
+  const file = input.files?.[0]; if(!file) return;
+  input.value = "";
+  if (file.type === "application/pdf"){
+    setupStatus("PDFs can't be read directly yet — open the invoice, screenshot it, and drop the image.");
+    return;
+  }
+  readInvoice(file);
+}
+function setupStatus(msg){ const s=$("setup-status"); s.textContent=msg; s.classList.remove("hide"); }
+
+async function readInvoice(file){
+  setupStatus("Reading invoice…");
+  try{
+    const w = await ocr();
+    const { data:{ text } } = await w.recognize(file);
+    const f = parseInvoiceText(text);
+    const filled = [];
+    const setIf = (id,val,label)=>{ if(val){ $(id).value = val; filled.push(label); } };
+    setIf("s-name",  f.name,  "name");
+    setIf("s-addr",  f.addr,  "address");
+    setIf("s-bank",  f.bank,  "bank details");
+    setIf("s-invno", f.invNo, "next invoice no.");
+    setIf("s-rate",  f.rate,  "rate");
+    setupStatus(filled.length
+      ? `Read off: ${filled.join(", ")}. Check the fields below, fix anything wrong, then Save settings.`
+      : "Couldn't read much off that one — fill the fields below in manually.");
+  }catch(e){
+    setupStatus("Couldn't read that image: " + (e.message||e) + " — fill the fields below in manually.");
+  }
+}
+
+// Best-effort scrape of an invoice image. Bank details + invoice no. are the
+// reliable hits; name/address are guesses the user confirms before saving.
+function parseInvoiceText(text){
+  const t = (text||"").replace(/\u00a0/g," ");
+  const lines = t.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const grab = re => (t.match(re)||[])[1];
+  const out = {};
+
+  const accName = grab(/\bacc(?:ount)?\.?\s*name\s*[:\-]?\s*([A-Za-z][A-Za-z .,'&-]{1,40})/i);
+  const sort    = grab(/sort\s*code\D{0,6}([0-9]{2}\s*[-\s]?\s*[0-9]{2}\s*[-\s]?\s*[0-9]{2})/i);
+  const acc     = grab(/\bacc(?:ount)?\.?\s*(?:no\.?|number|#)?\D{0,6}([0-9]{8})\b/i);
+  if (sort || acc){
+    const bits = [];
+    if (accName) bits.push("Account name: " + accName.trim());
+    if (sort) bits.push("Sort code " + sort.replace(/\D/g,"").replace(/(\d\d)(\d\d)(\d\d)/,"$1-$2-$3"));
+    if (acc)  bits.push("Account " + acc);
+    out.bank = bits.join("\n");
+  }
+
+  const inv = grab(/invoice\s*(?:no\.?|number|#)?\s*[:#]?\s*0*([0-9]{1,6})\b/i);
+  if (inv) out.invNo = String(parseInt(inv,10) + 1); // their last invoice + 1
+
+  const rate = grab(/£\s*([0-9]+(?:\.[0-9]{1,2})?)\s*(?:\/|per)\s*(?:hr|hour|h)\b/i);
+  if (rate) out.rate = rate;
+
+  const skip = /(invoice|bill\s*to|date|due|total|amount|subtotal|sort|account|vat|tel|phone|email|@|qty|unit|description)/i;
+  const nameLine = lines.find(l => /^[A-Za-z][A-Za-z .,'-]{2,40}$/.test(l) && !skip.test(l));
+  if (nameLine){
+    out.name = nameLine;
+    const i = lines.indexOf(nameLine), addr = [];
+    for (let j=i+1; j<lines.length && addr.length<4; j++){
+      if (skip.test(lines[j])) break;
+      addr.push(lines[j]);
+      if (/[A-Z]{1,2}[0-9][0-9A-Z]?\s*[0-9][A-Z]{2}/.test(lines[j])) break; // UK postcode = end of block
+    }
+    if (addr.length) out.addr = addr.join("\n");
+  }
+  return out;
 }
 
 async function photoIn(input){
@@ -746,7 +827,9 @@ async function importWhatsApp(input){
   const file = input.files?.[0]; if(!file) return;
   input.value = "";
   const status = $("import-status");
-  if (!settings.key){ status.textContent = "Add your Anthropic API key first — WhatsApp parsing uses it."; return }
+  let key = (settings.key || "").trim();
+  if (!key){ key = (prompt("Paste your Anthropic API key for this import (used once, not stored):") || "").trim(); }
+  if (!key){ status.textContent = "Cancelled — no key entered."; return }
   const tag = (settings.tag || "").trim();
   if (!tag){ status.textContent = "Set your name/tag first so I can filter the chat."; return }
   status.textContent = "Filtering chat…";
@@ -759,7 +842,7 @@ async function importWhatsApp(input){
   try{
     const r = await fetch("https://api.anthropic.com/v1/messages",{
       method:"POST",
-      headers:{ "Content-Type":"application/json", "x-api-key":settings.key,
+      headers:{ "Content-Type":"application/json", "x-api-key":key,
         "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
       body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:4000,
         messages:[{role:"user",content:`These are WhatsApp group messages where an admin assigns delivery shifts, tagging "${tag}" and a coworker. Message timestamps are [DD/MM/YYYY, ...]. Extract one record per working day for ${tag}. The shift date is the date being assigned (usually the day after the message, or stated in the message — use the message date if unclear). The crew mate is the other person tagged alongside ${tag}.
@@ -796,7 +879,7 @@ function fillSettings(){
   $("s-rate").value = settings.rate; $("s-invno").value = settings.invNo;
   $("s-name").value = settings.name; $("s-addr").value = settings.addr; $("s-utr").value = settings.utr;
   $("s-client").value = settings.client; $("s-client-addr").value = settings.clientAddr;
-  $("s-bank").value = settings.bank; $("s-key").value = settings.key;
+  $("s-bank").value = settings.bank;
   $("s-sendto").value = settings.sendTo; $("s-msg").value = settings.msg; $("s-tag").value = settings.tag;
 }
 function saveSettings(){
@@ -804,7 +887,7 @@ function saveSettings(){
     rate:$("s-rate").value, invNo:$("s-invno").value||1,
     name:$("s-name").value, addr:$("s-addr").value, utr:$("s-utr").value,
     client:$("s-client").value, clientAddr:$("s-client-addr").value,
-    bank:$("s-bank").value, key:$("s-key").value,
+    bank:$("s-bank").value,
     sendTo:$("s-sendto").value, msg:$("s-msg").value, tag:$("s-tag").value };
   saveS(); render(); err(""); show("log");
 }
