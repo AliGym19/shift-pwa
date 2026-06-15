@@ -20,3 +20,4 @@ python3 -m http.server 8000
 ## Deploy
 
 Hosted on Vercel as a static site (no build step). Pushes to `main` auto-deploy.
+
