@@ -23,7 +23,7 @@
   header{background:var(--ink);color:#fff;padding:20px 0 18px;margin-bottom:16px}
   .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#9FB3A6}
   h1{font-size:21px;margin-top:2px}
-  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
   .stat .v{font-family:var(--mono);font-size:19px;font-weight:700}
   .stat .l{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#9FB3A6}
   .stat .e{font-family:var(--mono);font-size:10px;color:#9FB3A6}
@@ -163,13 +163,13 @@
     <div id="invoice-out" class="hide">
       <div id="invoice-sheet"></div>
       <div class="btnrow">
-        <button onclick="window.print()">Print / save as PDF</button>
+        <button onclick="downloadInvoicePDF()">Download PDF</button>
         <button class="ghost" onclick="openSendReview()">Send by email</button>
       </div>
       <div id="send-review" class="card hide" style="margin-top:12px">
         <div class="label">Review &amp; share</div>
         <div class="field" style="margin-top:8px"><div class="label">Message (Gmail uses this as the body)</div><textarea id="em-body" style="min-height:90px"></textarea></div>
-        <div style="font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin-bottom:10px">📎 invoice-<span id="em-att"></span>.pdf — tap “Print / save as PDF” above to eyeball it first.<br>Send opens the share sheet: pick <strong>Gmail</strong>, set the recipient (<span id="send-recip"></span>) and send there.</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin-bottom:10px">📎 invoice-<span id="em-att"></span>.pdf — tap “Download PDF” above to check it first.<br>Send opens the share sheet: pick <strong>Gmail</strong>, set the recipient (<span id="send-recip"></span>) and send there.</div>
         <div class="btnrow">
           <button onclick="confirmSend()">Send to Gmail</button>
           <button class="ghost" onclick="$('send-review').classList.add('hide')">Cancel</button>
@@ -198,10 +198,7 @@
     </div>
     <div class="card">
       <div class="label">Pay</div>
-      <div class="row field" style="margin-top:8px">
-        <div><div class="label">Rate £/hour</div><input id="s-rate" inputmode="decimal" placeholder="e.g. 13.50"></div>
-        <div><div class="label">Next invoice no.</div><input id="s-invno" inputmode="numeric" placeholder="2"></div>
-      </div>
+      <div class="field" style="margin-top:8px"><div class="label">Rate £/hour</div><input id="s-rate" inputmode="decimal" placeholder="e.g. 13.50"></div>
     </div>
     <div class="card">
       <div class="label">Your details (invoice "From")</div>
@@ -396,13 +393,37 @@ async function importInvoice(input){
 }
 function setupStatus(msg){ const s=$("setup-status"); s.textContent=msg; s.classList.remove("hide"); }
 
+// Upscale + grayscale + contrast before OCR. Phone photos of invoices have small
+// text (street names, postcodes) that Tesseract truncates at native resolution;
+// rendering bigger and higher-contrast recovers those characters.
+async function preprocessForOCR(file){
+  try{
+    const img = await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=URL.createObjectURL(file); });
+    const w0 = img.width||1, scale = Math.min(3, Math.max(1, 1800/w0));
+    const c = document.createElement("canvas");
+    c.width = Math.round(w0*scale); c.height = Math.round((img.height||1)*scale);
+    const ctx = c.getContext("2d");
+    ctx.drawImage(img,0,0,c.width,c.height);
+    const im = ctx.getImageData(0,0,c.width,c.height), a = im.data;
+    for (let i=0;i<a.length;i+=4){
+      let g = 0.299*a[i] + 0.587*a[i+1] + 0.114*a[i+2];
+      g = g < 135 ? g*0.55 : Math.min(255, 64 + g*1.1);   // deepen ink, brighten paper
+      a[i]=a[i+1]=a[i+2]=g;
+    }
+    ctx.putImageData(im,0,0);
+    URL.revokeObjectURL(img.src);
+    return c;
+  }catch{ return file; }   // any failure → OCR the raw file
+}
+
 async function readInvoice(file){
   setupStatus("Reading invoice…");
   try{
     const w = await ocr();
+    const src = await preprocessForOCR(file);            // sharpen small text first
     let data;
-    try { ({ data } = await w.recognize(file, {}, { blocks:true })); }   // ask for word geometry
-    catch { ({ data } = await w.recognize(file)); }                       // older API → text only
+    try { ({ data } = await w.recognize(src, {}, { blocks:true })); }   // ask for word geometry
+    catch { ({ data } = await w.recognize(src)); }                       // older API → text only
     const f = (data.blocks && data.blocks.length) ? parseInvoiceGeometry(data)
                                                    : parseInvoiceFromLines(data.text||"");
     const filled = [];
@@ -411,8 +432,8 @@ async function readInvoice(file){
     setIf("s-addr",  f.addr,  "address");
     setIf("s-utr",   f.utr,   "UTR");
     setIf("s-bank",  f.bank,  "bank details");
-    setIf("s-invno", f.invNo, "next invoice no.");
     setIf("s-rate",  f.rate,  "rate");
+    if (f.invNo){ settings.invNo = f.invNo; filled.push("next invoice no."); }   // no box — held internally
     if (filled.length){ settings = readSettingsForm(); saveS(); }   // persist now — survives a refresh
     setupStatus(filled.length
       ? `Saved: ${filled.join(", ")}. These stick on refresh — check below and tap Save settings to correct anything.`
@@ -635,11 +656,12 @@ function clearAll(){
 
 function render(){
   // stats
-  const now = new Date(), ws = weekStart(now),
-    ms = new Date(now.getFullYear(),now.getMonth(),1), ys = new Date(now.getFullYear(),0,1);
+  const now = new Date(),
+    ds = new Date(now.getFullYear(),now.getMonth(),now.getDate()),
+    ms = new Date(now.getFullYear(),now.getMonth(),1);
   const sum = from => shifts.filter(s=>new Date(s.dateISO)>=from).reduce((a,s)=>a+hmToMin(s.total),0);
   const all = shifts.reduce((a,s)=>a+hmToMin(s.total),0);
-  $("stats").innerHTML = [["Week",sum(ws)],["Month",sum(ms)],["Year",sum(ys)],["All",all]]
+  $("stats").innerHTML = [["Day",sum(ds)],["Month",sum(ms)],["All",all]]
     .map(([l,m])=>{ const e = earnings(m);
       return `<div class="stat"><div class="l">${l}</div><div class="v">${minToHM(m)}</div>${e!=null?`<div class="e">${gbp(e)}</div>`:""}</div>`}).join("");
 
@@ -830,6 +852,15 @@ function buildPDF(inv){
   return doc;
 }
 
+function downloadInvoicePDF(){
+  if (!lastInvoice){ err("Generate an invoice first."); return }
+  recalcInvoice();                          // fold in any bonus / additional edits
+  const doc = buildPDF(lastInvoice);
+  const name = `invoice-${lastInvoice.number}.pdf`;
+  try { doc.save(name); }                   // real PDF → Files / share sheet on iOS
+  catch { window.open(URL.createObjectURL(doc.output("blob")), "_blank"); }
+}
+
 const fillMsg = inv => (settings.msg || "Please find attached invoice {no} for {period}: {hours}, total {amount}.")
   .replace("{no}", inv.number).replace("{period}", inv.period)
   .replace("{hours}", minToWords(inv.totalMin))
@@ -938,7 +969,7 @@ async function importJSON(input){
 
 
 function fillSettings(){
-  $("s-rate").value = settings.rate; $("s-invno").value = settings.invNo;
+  $("s-rate").value = settings.rate;
   $("s-name").value = settings.name; $("s-addr").value = settings.addr; $("s-utr").value = settings.utr;
   $("s-client").value = settings.client; $("s-client-addr").value = settings.clientAddr;
   $("s-bank").value = settings.bank;
@@ -946,7 +977,7 @@ function fillSettings(){
 }
 function readSettingsForm(){
   return { ...settings,
-    rate:$("s-rate").value, invNo:$("s-invno").value||1,
+    rate:$("s-rate").value,
     name:$("s-name").value, addr:$("s-addr").value, utr:$("s-utr").value,
     client:$("s-client").value, clientAddr:$("s-client-addr").value,
     bank:$("s-bank").value,
