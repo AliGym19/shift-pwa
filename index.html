@@ -413,8 +413,9 @@ async function readInvoice(file){
     setIf("s-bank",  f.bank,  "bank details");
     setIf("s-invno", f.invNo, "next invoice no.");
     setIf("s-rate",  f.rate,  "rate");
+    if (filled.length){ settings = readSettingsForm(); saveS(); }   // persist now — survives a refresh
     setupStatus(filled.length
-      ? `Read off: ${filled.join(", ")}. Check the fields below, fix anything wrong, then Save settings.`
+      ? `Saved: ${filled.join(", ")}. These stick on refresh — check below and tap Save settings to correct anything.`
       : "Couldn't read much off that one — fill the fields below in manually.");
   }catch(e){
     setupStatus("Couldn't read that image: " + (e.message||e) + " — fill the fields below in manually.");
@@ -943,13 +944,16 @@ function fillSettings(){
   $("s-bank").value = settings.bank;
   $("s-sendto").value = settings.sendTo; $("s-msg").value = settings.msg; $("s-tag").value = settings.tag;
 }
-function saveSettings(){
-  settings = { ...settings,
+function readSettingsForm(){
+  return { ...settings,
     rate:$("s-rate").value, invNo:$("s-invno").value||1,
     name:$("s-name").value, addr:$("s-addr").value, utr:$("s-utr").value,
     client:$("s-client").value, clientAddr:$("s-client-addr").value,
     bank:$("s-bank").value,
     sendTo:$("s-sendto").value, msg:$("s-msg").value, tag:$("s-tag").value };
+}
+function saveSettings(){
+  settings = readSettingsForm();
   saveS(); render(); err(""); show("log");
 }
 
