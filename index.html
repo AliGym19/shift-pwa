@@ -166,6 +166,10 @@
         <button onclick="downloadInvoicePDF()">Download PDF</button>
         <button class="ghost" onclick="openSendReview()">Send by email</button>
       </div>
+      <div id="inv-disclaimer" class="hide" style="margin-top:12px;padding:12px 14px;border:1px solid var(--amber);border-radius:10px;background:#FBF1E0;font-family:var(--mono);font-size:12px;color:var(--ink);line-height:1.6">
+        <strong>⚠️ Check the invoice before you send it.</strong><br>
+        It's generated automatically from your logged shifts and saved details. Open the PDF and confirm the week, hours, rate, totals and your own details are correct — you're responsible for what you send to your client.
+      </div>
       <div id="send-review" class="card hide" style="margin-top:12px">
         <div class="label">Review &amp; share</div>
         <div class="field" style="margin-top:8px"><div class="label">Message (Gmail uses this as the body)</div><textarea id="em-body" style="min-height:90px"></textarea></div>
@@ -686,11 +690,11 @@ function render(){
               ${open?`<div style="color:var(--amber);margin-bottom:6px">Needs finish time</div>`:""}
               Start: ${s.start||"—"} · Break: ${s.brk||"—"}<br>
               Crew: ${s.crew||"—"}<br>
-              ${s.drops?.length?`First drop: ${s.drops.map(d=>`${d.postcode}${d.window?` (${d.window})`:""}`).join(", ")}<br>`:""}
+              ${s.drops?.length?`First drop: ${s.drops.map(d=>d.postcode).join(", ")}<br>`:""}
               Last drop: ${s.lastDrop||"—"}${s.notes?`<br>Notes: ${s.notes}`:""}
-              <div class="btnrow">
-                <button class="sm" onclick="toggle('c-${s.id}')">${open?"Finish shift":"Info"}</button>
+              <div class="btnrow" style="justify-content:space-between">
                 <button class="danger sm" onclick="delShift(${s.id})">Delete shift</button>
+                <button class="sm" onclick="toggle('c-${s.id}')">${open?"Finish shift":"Info"}</button>
               </div>
               <div class="co hide" id="c-${s.id}">${open?coFormHTML(s):coBreakdownHTML(s)}</div>
             </div>`}).join("")}
@@ -772,6 +776,7 @@ function buildInvoice(){
   lastInvoice = inv;
   $("invoice-sheet").innerHTML = renderInvoiceHTML(inv);
   $("invoice-out").classList.remove("hide");
+  $("inv-disclaimer").classList.add("hide");
   $("send-status").textContent = "";
   recalcInvoice();
   settings.invNo = (parseInt(settings.invNo)||1) + 1; saveS();
@@ -859,6 +864,7 @@ function downloadInvoicePDF(){
   const name = `invoice-${lastInvoice.number}.pdf`;
   try { doc.save(name); }                   // real PDF → Files / share sheet on iOS
   catch { window.open(URL.createObjectURL(doc.output("blob")), "_blank"); }
+  $("inv-disclaimer").classList.remove("hide");   // they've now seen a PDF
 }
 
 const fillMsg = inv => (settings.msg || "Please find attached invoice {no} for {period}: {hours}, total {amount}.")
@@ -883,6 +889,7 @@ async function confirmSend(){
   const body = $("em-body").value;
   const filename = `invoice-${inv.number}.pdf`;
   const doc = buildPDF(inv);
+  $("inv-disclaimer").classList.remove("hide");
   const file = new File([doc.output("blob")], filename, { type:"application/pdf" });
   if (navigator.canShare && navigator.canShare({ files:[file] })){
     try{ await navigator.share({ files:[file], title: subject, text: body });
