@@ -30,10 +30,18 @@
   .stat .l{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#9FB3A6}
   .stat .e{font-family:var(--mono);font-size:10px;color:#9FB3A6}
   .kebab{background:none;border:none;color:#9FB3A6;font-size:20px;line-height:1;padding:4px;width:auto;cursor:pointer;flex:0 0 auto}
-  .stat.editing{box-shadow:0 0 0 1px #3a4a40;border-radius:8px}
+  .stat.editing{box-shadow:inset 0 0 0 1px #3a4a40;border-radius:8px}
   .stat .rm{position:absolute;top:-8px;left:-8px;width:17px;height:17px;border-radius:50%;background:#9FB3A6;color:#16201B;border:none;font-size:14px;font-weight:700;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2}
   .stat.add{display:flex;align-items:center;justify-content:center;border:1px dashed #3a4a40;border-radius:8px;min-height:54px;padding:0}
   .stat.add select{background:none;color:#fff;border:none;font-size:20px;width:auto;text-align:center;cursor:pointer}
+  .setcard .setc-head{display:flex;justify-content:space-between;align-items:center;cursor:pointer}
+  .setcard .setc-head .label{margin-bottom:0}
+  .setcard .chev{color:var(--ink-soft);font-size:13px;transition:transform .15s}
+  .setcard.open .chev{transform:rotate(180deg)}
+  .setcard:not(.open) .setc-body{display:none}
+  .setc-body{margin-top:10px}
+  .setc-edit{margin-top:4px}
+  input.locked,textarea.locked,select.locked{background:transparent;border-color:transparent;padding:4px 0}
   .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
   .label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:5px}
   input,textarea,select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;
@@ -174,7 +182,7 @@
     <div id="invoice-out" class="hide">
       <div id="inv-disclaimer" class="hide" style="margin:0 0 12px;padding:12px 14px;border:1px solid var(--amber);border-radius:10px;background:#FBF1E0;font-family:var(--mono);font-size:12px;color:var(--ink);line-height:1.6">
         <strong>⚠️ Check the invoice before you send it.</strong><br>
-        It's generated automatically from your logged shifts and saved details. Open the PDF and confirm the week, hours, rate, totals and your own details are correct — you're responsible for what you send to your client.
+        Open the PDF and confirm the week, hours, rate, totals and your own details are correct.
       </div>
       <div id="invoice-sheet"></div>
       <div class="btnrow">
@@ -211,45 +219,63 @@
       <input type="file" id="inv-in" accept="image/*" class="hide" onchange="importInvoice(this)">
       <div id="setup-status" class="hide" style="margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--ink-soft)"></div>
     </div>
-    <div class="card">
-      <div class="label">Pay</div>
-      <div class="field" style="margin-top:8px"><div class="label">Rate £/hour</div><input id="s-rate" inputmode="decimal" placeholder="e.g. 13.50"></div>
-    </div>
-    <div class="card">
-      <div class="label">Shift end</div>
-      <div class="field" style="margin-top:8px">
-        <div class="label">“Actual end” means the moment you…</div>
-        <select id="s-endmode">
-          <option value="job">Leave the last job</option>
-          <option value="depot">Leave the depot</option>
-        </select>
+    <div class="card setcard">
+      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Pay</span><span class="chev">⌄</span></div>
+      <div class="setc-body">
+        <div class="field"><div class="label">Rate £/hour</div><input id="s-rate" class="locked" readonly inputmode="decimal" placeholder="e.g. 13.50"></div>
+        <button class="ghost sm setc-edit" onclick="editSet(this)">Edit</button>
       </div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft)">These are different times, so this changes your worked hours — and your effective £/hr.</div>
     </div>
-    <div class="card">
-      <div class="label">Your details (invoice "From")</div>
-      <div class="field" style="margin-top:8px"><div class="label">Name</div><input id="s-name"></div>
-      <div class="field"><div class="label">Address</div><textarea id="s-addr" style="min-height:60px"></textarea></div>
-      <div class="field"><div class="label">UTR / reference (optional)</div><input id="s-utr"></div>
+    <div class="card setcard">
+      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Shift end</span><span class="chev">⌄</span></div>
+      <div class="setc-body">
+        <div class="field">
+          <div class="label">“Actual end” means the moment you…</div>
+          <select id="s-endmode" class="locked" disabled>
+            <option value="job">Leave the last job</option>
+            <option value="depot">Leave the depot</option>
+          </select>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft)">These are different times, so this changes your worked hours — and your effective £/hr.</div>
+        <button class="ghost sm setc-edit" onclick="editSet(this)">Edit</button>
+      </div>
     </div>
-    <div class="card">
-      <div class="label">Client (invoice "To")</div>
-      <div class="field" style="margin-top:8px"><div class="label">Company</div><input id="s-client" placeholder="Client company name"></div>
-      <div class="field"><div class="label">Client address</div><textarea id="s-client-addr" style="min-height:60px"></textarea></div>
+    <div class="card setcard">
+      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Your details (invoice "From")</span><span class="chev">⌄</span></div>
+      <div class="setc-body">
+        <div class="field"><div class="label">Name</div><input id="s-name" class="locked" readonly></div>
+        <div class="field"><div class="label">Address</div><textarea id="s-addr" class="locked" readonly style="min-height:60px"></textarea></div>
+        <div class="field"><div class="label">UTR / reference (optional)</div><input id="s-utr" class="locked" readonly></div>
+        <button class="ghost sm setc-edit" onclick="editSet(this)">Edit</button>
+      </div>
     </div>
-    <div class="card">
-      <div class="label">Payment details (shown on invoice)</div>
-      <div class="field" style="margin-top:8px"><div class="label">Bank details / payment terms</div>
-        <textarea id="s-bank" style="min-height:60px" placeholder="Account name, sort code, account no. Payment within 7 days."></textarea></div>
+    <div class="card setcard">
+      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Client (invoice "To")</span><span class="chev">⌄</span></div>
+      <div class="setc-body">
+        <div class="field"><div class="label">Company</div><input id="s-client" class="locked" readonly placeholder="Client company name"></div>
+        <div class="field"><div class="label">Client address</div><textarea id="s-client-addr" class="locked" readonly style="min-height:60px"></textarea></div>
+        <button class="ghost sm setc-edit" onclick="editSet(this)">Edit</button>
+      </div>
     </div>
-    <div class="card">
-      <div class="label">Invoice email</div>
-      <div class="field" style="margin-top:8px"><div class="label">Client's email (reminder — who to send to)</div>
-        <input id="s-sendto" inputmode="email" placeholder="jordan@…"></div>
-      <div class="field"><div class="label">Pre-made message · placeholders: {no} {period} {hours} {amount}</div>
-        <textarea id="s-msg" style="min-height:80px" placeholder="Hi, please find attached invoice {no} for the period {period} — {hours} at the agreed rate, total {amount}. Thanks"></textarea></div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft)">
-        Send opens your share sheet — pick Gmail, the invoice PDF is attached, then set the recipient and send in Gmail.
+    <div class="card setcard">
+      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Payment details (shown on invoice)</span><span class="chev">⌄</span></div>
+      <div class="setc-body">
+        <div class="field"><div class="label">Bank details / payment terms</div>
+          <textarea id="s-bank" class="locked" readonly style="min-height:60px" placeholder="Account name, sort code, account no. Payment within 7 days."></textarea></div>
+        <button class="ghost sm setc-edit" onclick="editSet(this)">Edit</button>
+      </div>
+    </div>
+    <div class="card setcard">
+      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Invoice email</span><span class="chev">⌄</span></div>
+      <div class="setc-body">
+        <div class="field"><div class="label">Client's email (reminder — who to send to)</div>
+          <input id="s-sendto" class="locked" readonly inputmode="email" placeholder="jordan@…"></div>
+        <div class="field"><div class="label">Pre-made message · placeholders: {no} {period} {hours} {amount}</div>
+          <textarea id="s-msg" class="locked" readonly style="min-height:80px" placeholder="Hi, please find attached invoice {no} for the period {period} — {hours} at the agreed rate, total {amount}. Thanks"></textarea></div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft)">
+          Send opens your share sheet — pick Gmail, the invoice PDF is attached, then set the recipient and send in Gmail.
+        </div>
+        <button class="ghost sm setc-edit" onclick="editSet(this)">Edit</button>
       </div>
     </div>
     <div class="card">
@@ -275,7 +301,7 @@
       <button class="ghost" onclick="exportCSV()">Export (CSV)</button>
     </div>
     <div class="btnrow"><button class="danger" onclick="clearAll()">Clear all shifts</button></div>
-    <div style="text-align:center;margin-top:18px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-soft)">Shift Tracker · AOSRI-16</div>
+    <div style="text-align:center;margin-top:18px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-soft)">Shift Tracker · AOSRI-17</div>
   </section>
 </div>
 
@@ -702,8 +728,8 @@ function coFormHTML(s){
   const needRate = !parseFloat(settings.rate);
   return `
     <div class="row">
-      <div><div class="label">Actual start</div><input id="cs-${s.id}" value="${s.aStart||s.start||""}" placeholder="06:23"></div>
-      <div><div class="label">${settings.endMode==="depot"?"Left Depot":"Last Job"}</div><input id="ce-${s.id}" value="${s.aEnd||""}" placeholder="16:30"></div>
+      <div><div class="label">Actual start:</div><input id="cs-${s.id}" value="${s.aStart||s.start||""}" placeholder="06:23"></div>
+      <div><div class="label">${settings.endMode==="depot"?"Left Depot:":"Last Job:"}</div><input id="ce-${s.id}" value="${s.aEnd||""}" placeholder="16:30"></div>
     </div>
     <button class="ghost sm" style="margin-top:8px" onclick="stampNow(${s.id})">Finished now</button>
     <label class="brk"><input type="checkbox" id="cb-${s.id}" ${s.tookBreak?"checked":""}> Took the ${s.brk||"0:30"} break</label>
@@ -1052,6 +1078,18 @@ async function importJSON(input){
 }
 
 
+function toggleSet(head){ head.parentElement.classList.toggle("open"); }
+function editSet(btn){
+  const card = btn.closest(".setcard");
+  const fields = card.querySelectorAll("input,textarea,select");
+  const start = btn.textContent.trim() === "Edit";
+  fields.forEach(f=>{
+    f.classList.toggle("locked", !start);
+    if (f.tagName === "SELECT") f.disabled = !start; else f.readOnly = !start;
+  });
+  if (start){ btn.textContent = "Done"; const f = fields[0]; if (f && f.focus) f.focus(); }
+  else { btn.textContent = "Edit"; settings = readSettingsForm(); saveS(); }
+}
 function fillSettings(){
   $("s-rate").value = settings.rate;
   $("s-name").value = settings.name; $("s-addr").value = settings.addr; $("s-utr").value = settings.utr;
