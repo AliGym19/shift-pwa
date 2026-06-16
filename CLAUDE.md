@@ -20,6 +20,16 @@ ethos throughout: small, fast, no ceremony.
 Static site on Vercel — framework "Other", no build command, output = root.
 Live: https://shift-pwa.vercel.app · Repo: https://github.com/AliGym19/shift-pwa
 
+## Versioning
+- The build number is **AOSRI-N** (Claude-in-chat names each delivered zip this way and bumps N
+  every build). This single number is the source of truth — the zip name, the in-app stamp, and
+  the commit all use the same N. No parallel "vN"/folder counters; that offset caused confusion.
+- The app shows its version at the **bottom of Settings** ("Shift Tracker · AOSRI-N"). This stamp
+  is **baked into the authored `index.html`** — Claude-in-chat owns and bumps it. **You (Claude Code)
+  do NOT hand-edit the stamp**; it arrives in the dropped file already correct. (It used to be a
+  hand-edit re-added each drop — that's gone now, so don't reintroduce it.)
+- Commit message: descriptive summary + the same number, e.g. `AOSRI-14: close-out label, version stamp`.
+
 ## Source of truth — don't break this
 `index.html` is authored in chat (Claude), Ali downloads it, and **you (Claude Code)
 commit and deploy it — you do not hand-edit `index.html`.** Two agents editing the same

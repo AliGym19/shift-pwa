@@ -23,10 +23,17 @@
   header{background:var(--ink);color:#fff;padding:20px 0 18px;margin-bottom:16px}
   .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#9FB3A6}
   h1{font-size:21px;margin-top:2px}
-  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
-  .stat .v{font-family:var(--mono);font-size:19px;font-weight:700}
+  .statshead{display:flex;align-items:flex-start;gap:6px;margin-top:14px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;flex:1}
+  .stat{position:relative}
+  .stat .v{font-family:var(--mono);font-size:16px;font-weight:700}
   .stat .l{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#9FB3A6}
   .stat .e{font-family:var(--mono);font-size:10px;color:#9FB3A6}
+  .kebab{background:none;border:none;color:#9FB3A6;font-size:20px;line-height:1;padding:4px;width:auto;cursor:pointer;flex:0 0 auto}
+  .stat.editing{border:1px solid #3a4a40;border-radius:8px;padding:14px 6px 8px}
+  .stat .rm{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:13px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .stat.add{display:flex;align-items:center;justify-content:center;border:1px dashed #3a4a40;border-radius:8px;min-height:54px;padding:0}
+  .stat.add select{background:none;color:#fff;border:none;font-size:20px;width:auto;text-align:center;cursor:pointer}
   .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
   .label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:5px}
   input,textarea,select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;
@@ -39,6 +46,7 @@
     font-family:var(--sans);font-size:14px;font-weight:600;width:100%;cursor:pointer}
   button.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
   button.danger{background:transparent;border:1px solid var(--red);color:var(--red)}
+  button.danger-solid{background:var(--red);border:1px solid var(--red);color:#fff}
   button.sm{width:auto;padding:8px 12px;font-size:13px}
   .btnrow{display:flex;gap:8px;margin-top:10px}
   .dashed{border-top:2px dashed var(--line);margin:14px 0}
@@ -101,7 +109,10 @@
 <header><div class="wrap">
   <div class="eyebrow">Route log · invoice verification</div>
   <h1>Shift Tracker</h1>
-  <div class="stats" id="stats"></div>
+  <div class="statshead">
+    <div class="stats" id="stats"></div>
+    <button id="kebab" class="kebab" onclick="toggleStatsEdit()" aria-label="Customise stats">⋮</button>
+  </div>
 </div></header>
 
 <div class="wrap">
@@ -205,6 +216,17 @@
       <div class="field" style="margin-top:8px"><div class="label">Rate £/hour</div><input id="s-rate" inputmode="decimal" placeholder="e.g. 13.50"></div>
     </div>
     <div class="card">
+      <div class="label">Shift end</div>
+      <div class="field" style="margin-top:8px">
+        <div class="label">“Actual end” means the moment you…</div>
+        <select id="s-endmode">
+          <option value="job">Leave the last job</option>
+          <option value="depot">Leave the depot</option>
+        </select>
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft)">These are different times, so this changes your worked hours — and your effective £/hr.</div>
+    </div>
+    <div class="card">
       <div class="label">Your details (invoice "From")</div>
       <div class="field" style="margin-top:8px"><div class="label">Name</div><input id="s-name"></div>
       <div class="field"><div class="label">Address</div><textarea id="s-addr" style="min-height:60px"></textarea></div>
@@ -253,7 +275,7 @@
       <button class="ghost" onclick="exportCSV()">Export (CSV)</button>
     </div>
     <div class="btnrow"><button class="danger" onclick="clearAll()">Clear all shifts</button></div>
-    <div style="text-align:center;margin-top:18px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-soft)">Shift Tracker · v9</div>
+    <div style="text-align:center;margin-top:18px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-soft)">Shift Tracker · AOSRI-14</div>
   </section>
 </div>
 
@@ -270,7 +292,7 @@
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } };
 let shifts = load("shifts-v1", []);
 let settings = load("settings-v1", {});
-settings = Object.assign({ rate:"", invNo:1, name:"", addr:"", utr:"", client:"", clientAddr:"", bank:"", key:"", sendTo:"", sendFrom:"", msg:"", webhook:"", tag:"" }, settings);
+settings = Object.assign({ rate:"", invNo:1, name:"", addr:"", utr:"", client:"", clientAddr:"", bank:"", key:"", sendTo:"", sendFrom:"", msg:"", webhook:"", tag:"", endMode:"job", periods:["day","week","month","all"] }, settings);
 let lastInvoice = null;
 let invRows = [];
 let drops = []; // draft drops buffer
@@ -349,6 +371,72 @@ const $ = id => document.getElementById(id);
 const err = msg => { const e = $("errbox"); if(!msg){e.classList.add("hide");return}
   e.textContent = msg; e.classList.remove("hide") };
 const toggle = id => $(id).classList.toggle("hide");
+
+/* ───────── home stats: customisable periods ───────── */
+const PERIODS = {
+  day:  { label:"Day",   from:n => new Date(n.getFullYear(),n.getMonth(),n.getDate()) },
+  week: { label:"Week",  from:n => weekStart(n) },
+  month:{ label:"Month", from:n => new Date(n.getFullYear(),n.getMonth(),1) },
+  year: { label:"Year",  from:n => new Date(n.getFullYear(),0,1) },
+  all:  { label:"All",   from:()=> null }
+};
+const PERIOD_ORDER = ["day","week","month","year","all"];
+let statsEdit = false;
+const statKeys = () => { const ks = (settings.periods||[]).filter(k=>PERIODS[k]); return ks.length ? ks : ["day","week","month","all"]; };
+
+function renderStats(){
+  const now = new Date();
+  const sumFrom = from => shifts.filter(s=>!from || new Date(s.dateISO)>=from).reduce((a,s)=>a+hmToMin(s.total),0);
+  const keys = statKeys();
+  const boxes = keys.map(k=>{
+    const m = sumFrom(PERIODS[k].from(now)), e = earnings(m);
+    return `<div class="stat${statsEdit?" editing":""}">
+      ${statsEdit?`<button class="rm" onclick="removePeriod('${k}')">−</button>`:""}
+      <div class="l">${PERIODS[k].label}</div>
+      <div class="v">${minToWords(m)}</div>
+      ${e!=null?`<div class="e">${gbp(e)}</div>`:""}
+    </div>`;
+  }).join("");
+  let add = "";
+  if (statsEdit){
+    const avail = PERIOD_ORDER.filter(k=>!keys.includes(k));
+    if (avail.length) add = `<div class="stat add"><select onchange="addPeriod(this.value);this.value=''">`
+      + `<option value="">＋</option>${avail.map(k=>`<option value="${k}">${PERIODS[k].label}</option>`).join("")}</select></div>`;
+  }
+  const st = $("stats");
+  st.style.gridTemplateColumns = statsEdit ? "repeat(auto-fill,minmax(82px,1fr))" : `repeat(${keys.length},1fr)`;
+  st.innerHTML = boxes + add;
+}
+function toggleStatsEdit(){
+  statsEdit = !statsEdit;
+  $("kebab").textContent = statsEdit ? "✓" : "⋮";
+  if (!statsEdit) saveS();
+  renderStats();
+}
+function removePeriod(k){
+  const ps = statKeys().filter(x=>x!==k);
+  if (!ps.length) return;                 // always keep at least one
+  settings.periods = ps; saveS(); renderStats();
+}
+function addPeriod(k){
+  if (!PERIODS[k]) return;
+  const cur = statKeys();
+  if (!cur.includes(k)) settings.periods = PERIOD_ORDER.filter(x => cur.includes(x) || x===k);
+  saveS(); renderStats();
+}
+
+// accordion: opening one shift collapses the others
+function openShift(id){
+  document.querySelectorAll(".detail").forEach(el=>{ if(el.id!=="d-"+id) el.classList.add("hide"); });
+  toggle("d-"+id);
+}
+// the close-out disclosure: Open ⇄ Close (filled red when open)
+function toggleCO(id){
+  const hidden = $("c-"+id).classList.toggle("hide");   // true when now hidden
+  const btn = $("cbtn-"+id);
+  btn.textContent = hidden ? "Open" : "Close";
+  btn.className = hidden ? "sm" : "danger-solid sm";
+}
 function show(tab){
   for (const t of ["log","invoice","settings"]){
     $("tab-"+t).classList.toggle("hide", t!==tab);
@@ -620,13 +708,13 @@ function coFormHTML(s){
   return `
     <div class="row">
       <div><div class="label">Actual start</div><input id="cs-${s.id}" value="${s.aStart||s.start||""}" placeholder="06:23"></div>
-      <div><div class="label">Actual end</div><input id="ce-${s.id}" value="${s.aEnd||""}" placeholder="16:30"></div>
+      <div><div class="label">${settings.endMode==="depot"?"Left Depot":"Last Job"}</div><input id="ce-${s.id}" value="${s.aEnd||""}" placeholder="16:30"></div>
     </div>
     <button class="ghost sm" style="margin-top:8px" onclick="stampNow(${s.id})">Finished now</button>
     <label class="brk"><input type="checkbox" id="cb-${s.id}" ${s.tookBreak?"checked":""}> Took the ${s.brk||"0:30"} break</label>
     ${needRate?`<div class="field" style="margin-top:8px"><div class="label">Your £/hour — set once to unlock pay/hr</div><input id="cr-${s.id}" inputmode="decimal" placeholder="e.g. 13.50"></div>`:""}
     <div id="cerr-${s.id}" class="coerr"></div>
-    <button class="sm" style="margin-top:8px" onclick="saveClose(${s.id})">Save finish</button>`;
+    <button class="sm" style="margin-top:8px" onclick="saveClose(${s.id})">Save</button>`;
 }
 
 function coBreakdownHTML(s){
@@ -638,7 +726,7 @@ function coBreakdownHTML(s){
   return `
     Worked: <strong>${minToWords(co.workedM)}</strong> · Clock/paid: <strong>${minToWords(co.paidM)}</strong><br>
     ${co.deltaM>=0?`Finished <strong class="good">${minToWords(co.deltaM)} early</strong>`:`Ran <strong class="bad">${minToWords(-co.deltaM)} over</strong>`}<br>
-    Actual: ${s.aStart}–${s.aEnd}${s.tookBreak?` (incl. ${s.brk||"0:30"} break)`:" (no break)"}<br>
+    Actual: ${s.aStart}–${s.aEnd} · ${(s.endMode||settings.endMode)==="depot"?"left depot":"left last job"}${s.tookBreak?` (incl. ${s.brk||"0:30"} break)`:" (no break)"}<br>
     ${rateLine}<br>
     <button class="ghost sm" style="margin-top:8px" onclick="editClose(${s.id})">Edit finish time</button>`;
 }
@@ -651,7 +739,7 @@ function saveClose(id){
   if (!hmToMin(aStart) || !hmToMin(aEnd)){ $("cerr-"+id).textContent = "Need actual start and end as H:MM."; return }
   const rEl = $("cr-"+id);
   if (rEl && rEl.value.trim()){ settings.rate = rEl.value.trim(); saveS(); }   // onboarding event A
-  s.aStart = aStart; s.aEnd = aEnd; s.tookBreak = $("cb-"+id).checked;
+  s.aStart = aStart; s.aEnd = aEnd; s.tookBreak = $("cb-"+id).checked; s.endMode = settings.endMode;
   save(); render();
 }
 function clearAll(){
@@ -661,14 +749,7 @@ function clearAll(){
 
 function render(){
   // stats
-  const now = new Date(),
-    ds = new Date(now.getFullYear(),now.getMonth(),now.getDate()),
-    ms = new Date(now.getFullYear(),now.getMonth(),1);
-  const sum = from => shifts.filter(s=>new Date(s.dateISO)>=from).reduce((a,s)=>a+hmToMin(s.total),0);
-  const all = shifts.reduce((a,s)=>a+hmToMin(s.total),0);
-  $("stats").innerHTML = [["Day",sum(ds)],["Month",sum(ms)],["All",all]]
-    .map(([l,m])=>{ const e = earnings(m);
-      return `<div class="stat"><div class="l">${l}</div><div class="v">${minToHM(m)}</div>${e!=null?`<div class="e">${gbp(e)}</div>`:""}</div>`}).join("");
+  renderStats();
 
   // weeks
   const weeks = groupWeeks();
@@ -682,7 +763,7 @@ function render(){
           ${w.shifts.map(s=>{
             const open = !s.aEnd;
             return `
-            <div class="shift" onclick="toggle('d-${s.id}')">
+            <div class="shift" onclick="openShift(${s.id})">
               <div class="top"><span>${fmt(new Date(s.dateISO))} <span class="meta">· ${s.code||""} R${s.route||"—"}</span></span>
                 <strong>${s.total||"—"}</strong></div>
               <div class="bar"><i style="width:${open?80:100}%;background:${open?"var(--amber)":"var(--green)"}"></i></div>
@@ -695,7 +776,7 @@ function render(){
               Last drop: ${s.lastDrop||"—"}${s.notes?`<br>Notes: ${s.notes}`:""}
               <div class="btnrow" style="justify-content:space-between">
                 <button class="danger sm" onclick="delShift(${s.id})">Delete shift</button>
-                <button class="sm" onclick="toggle('c-${s.id}')">${open?"Finish shift":"Info"}</button>
+                <button id="cbtn-${s.id}" class="sm" onclick="toggleCO(${s.id})">Open</button>
               </div>
               <div class="co hide" id="c-${s.id}">${open?coFormHTML(s):coBreakdownHTML(s)}</div>
             </div>`}).join("")}
@@ -981,6 +1062,7 @@ function fillSettings(){
   $("s-name").value = settings.name; $("s-addr").value = settings.addr; $("s-utr").value = settings.utr;
   $("s-client").value = settings.client; $("s-client-addr").value = settings.clientAddr;
   $("s-bank").value = settings.bank;
+  $("s-endmode").value = settings.endMode || "job";
   $("s-sendto").value = settings.sendTo; $("s-msg").value = settings.msg; $("s-tag").value = settings.tag;
 }
 function readSettingsForm(){
@@ -989,6 +1071,7 @@ function readSettingsForm(){
     name:$("s-name").value, addr:$("s-addr").value, utr:$("s-utr").value,
     client:$("s-client").value, clientAddr:$("s-client-addr").value,
     bank:$("s-bank").value,
+    endMode:$("s-endmode").value,
     sendTo:$("s-sendto").value, msg:$("s-msg").value, tag:$("s-tag").value };
 }
 function saveSettings(){
