@@ -30,8 +30,8 @@
   .stat .l{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#9FB3A6}
   .stat .e{font-family:var(--mono);font-size:10px;color:#9FB3A6}
   .kebab{background:none;border:none;color:#9FB3A6;font-size:20px;line-height:1;padding:4px;width:auto;cursor:pointer;flex:0 0 auto}
-  .stat.editing{border:1px solid #3a4a40;border-radius:8px;padding:14px 6px 8px}
-  .stat .rm{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:13px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .stat.editing{box-shadow:0 0 0 1px #3a4a40;border-radius:8px}
+  .stat .rm{position:absolute;top:-8px;left:-8px;width:17px;height:17px;border-radius:50%;background:#9FB3A6;color:#16201B;border:none;font-size:14px;font-weight:700;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2}
   .stat.add{display:flex;align-items:center;justify-content:center;border:1px dashed #3a4a40;border-radius:8px;min-height:54px;padding:0}
   .stat.add select{background:none;color:#fff;border:none;font-size:20px;width:auto;text-align:center;cursor:pointer}
   .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
@@ -172,14 +172,14 @@
       <button onclick="buildInvoice()">Generate</button>
     </div>
     <div id="invoice-out" class="hide">
+      <div id="inv-disclaimer" class="hide" style="margin:0 0 12px;padding:12px 14px;border:1px solid var(--amber);border-radius:10px;background:#FBF1E0;font-family:var(--mono);font-size:12px;color:var(--ink);line-height:1.6">
+        <strong>⚠️ Check the invoice before you send it.</strong><br>
+        It's generated automatically from your logged shifts and saved details. Open the PDF and confirm the week, hours, rate, totals and your own details are correct — you're responsible for what you send to your client.
+      </div>
       <div id="invoice-sheet"></div>
       <div class="btnrow">
         <button onclick="downloadInvoicePDF()">Download PDF</button>
         <button class="ghost" onclick="openSendReview()">Send by email</button>
-      </div>
-      <div id="inv-disclaimer" class="hide" style="margin-top:12px;padding:12px 14px;border:1px solid var(--amber);border-radius:10px;background:#FBF1E0;font-family:var(--mono);font-size:12px;color:var(--ink);line-height:1.6">
-        <strong>⚠️ Check the invoice before you send it.</strong><br>
-        It's generated automatically from your logged shifts and saved details. Open the PDF and confirm the week, hours, rate, totals and your own details are correct — you're responsible for what you send to your client.
       </div>
       <div id="send-review" class="card hide" style="margin-top:12px">
         <div class="label">Review &amp; share</div>
@@ -275,7 +275,7 @@
       <button class="ghost" onclick="exportCSV()">Export (CSV)</button>
     </div>
     <div class="btnrow"><button class="danger" onclick="clearAll()">Clear all shifts</button></div>
-    <div style="text-align:center;margin-top:18px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-soft)">Shift Tracker · AOSRI-14</div>
+    <div style="text-align:center;margin-top:18px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-soft)">Shift Tracker · AOSRI-16</div>
   </section>
 </div>
 
@@ -404,7 +404,7 @@ function renderStats(){
       + `<option value="">＋</option>${avail.map(k=>`<option value="${k}">${PERIODS[k].label}</option>`).join("")}</select></div>`;
   }
   const st = $("stats");
-  st.style.gridTemplateColumns = statsEdit ? "repeat(auto-fill,minmax(82px,1fr))" : `repeat(${keys.length},1fr)`;
+  st.style.gridTemplateColumns = `repeat(${keys.length},1fr)`;
   st.innerHTML = boxes + add;
 }
 function toggleStatsEdit(){
@@ -425,11 +425,6 @@ function addPeriod(k){
   saveS(); renderStats();
 }
 
-// accordion: opening one shift collapses the others
-function openShift(id){
-  document.querySelectorAll(".detail").forEach(el=>{ if(el.id!=="d-"+id) el.classList.add("hide"); });
-  toggle("d-"+id);
-}
 // the close-out disclosure: Open ⇄ Close (filled red when open)
 function toggleCO(id){
   const hidden = $("c-"+id).classList.toggle("hide");   // true when now hidden
@@ -719,7 +714,7 @@ function coFormHTML(s){
 
 function coBreakdownHTML(s){
   const co = closeout(s);
-  if (!co) return `Couldn't compute — <button class="ghost sm" onclick="editClose(${s.id})">edit times</button>`;
+  if (!co) return `Couldn't compute — <button class="ghost sm" onclick="editClose(${s.id})">edit shift</button>`;
   const rateLine = co.perHour!=null
     ? `Effective: <strong class="${co.perHour>=co.rate?"good":"bad"}">${gbp(co.perHour)}/hr</strong> <span style="color:var(--ink-soft)">(base ${gbp(co.rate)})</span>`
     : `Effective £/hr — set your rate in Settings`;
@@ -728,7 +723,7 @@ function coBreakdownHTML(s){
     ${co.deltaM>=0?`Finished <strong class="good">${minToWords(co.deltaM)} early</strong>`:`Ran <strong class="bad">${minToWords(-co.deltaM)} over</strong>`}<br>
     Actual: ${s.aStart}–${s.aEnd} · ${(s.endMode||settings.endMode)==="depot"?"left depot":"left last job"}${s.tookBreak?` (incl. ${s.brk||"0:30"} break)`:" (no break)"}<br>
     ${rateLine}<br>
-    <button class="ghost sm" style="margin-top:8px" onclick="editClose(${s.id})">Edit finish time</button>`;
+    <button class="ghost sm" style="margin-top:8px" onclick="editClose(${s.id})">Edit shift</button>`;
 }
 
 function stampNow(id){ const d=new Date(); $("ce-"+id).value = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
@@ -763,7 +758,7 @@ function render(){
           ${w.shifts.map(s=>{
             const open = !s.aEnd;
             return `
-            <div class="shift" onclick="openShift(${s.id})">
+            <div class="shift" onclick="toggle('d-${s.id}')">
               <div class="top"><span>${fmt(new Date(s.dateISO))} <span class="meta">· ${s.code||""} R${s.route||"—"}</span></span>
                 <strong>${s.total||"—"}</strong></div>
               <div class="bar"><i style="width:${open?80:100}%;background:${open?"var(--amber)":"var(--green)"}"></i></div>
@@ -858,7 +853,7 @@ function buildInvoice(){
   lastInvoice = inv;
   $("invoice-sheet").innerHTML = renderInvoiceHTML(inv);
   $("invoice-out").classList.remove("hide");
-  $("inv-disclaimer").classList.add("hide");
+  $("inv-disclaimer").classList.remove("hide");
   $("send-status").textContent = "";
   recalcInvoice();
   settings.invNo = (parseInt(settings.invNo)||1) + 1; saveS();
