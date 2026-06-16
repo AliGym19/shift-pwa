@@ -40,7 +40,9 @@
   .setcard.open .chev{transform:rotate(180deg)}
   .setcard:not(.open) .setc-body{display:none}
   .setc-body{margin-top:10px}
-  .setc-edit{margin-top:4px}
+  .setc-ctrls{display:flex;align-items:center;gap:12px;flex:none}
+  .setc-edit{width:auto;padding:6px 14px;font-size:13px;margin:0;border-radius:8px}
+  .setc-body input:not(.locked),.setc-body textarea:not(.locked),.setc-body select:not(.locked){background:var(--green-soft);border-color:var(--green)}
   input.locked,textarea.locked,select.locked{background:transparent;border-color:transparent;padding:4px 0}
   .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
   .label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:5px}
@@ -220,14 +222,13 @@
       <div id="setup-status" class="hide" style="margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--ink-soft)"></div>
     </div>
     <div class="card setcard">
-      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Pay</span><span class="chev">⌄</span></div>
+      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Pay</span><span class="setc-ctrls"><button class="ghost setc-edit" onclick="event.stopPropagation();editSet(this)">Edit</button><span class="chev">⌄</span></span></div>
       <div class="setc-body">
         <div class="field"><div class="label">Rate £/hour</div><input id="s-rate" class="locked" readonly inputmode="decimal" placeholder="e.g. 13.50"></div>
-        <button class="ghost sm setc-edit" onclick="editSet(this)">Edit</button>
       </div>
     </div>
     <div class="card setcard">
-      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Shift end</span><span class="chev">⌄</span></div>
+      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Shift end</span><span class="setc-ctrls"><button class="ghost setc-edit" onclick="event.stopPropagation();editSet(this)">Edit</button><span class="chev">⌄</span></span></div>
       <div class="setc-body">
         <div class="field">
           <div class="label">“Actual end” means the moment you…</div>
@@ -237,36 +238,32 @@
           </select>
         </div>
         <div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft)">These are different times, so this changes your worked hours — and your effective £/hr.</div>
-        <button class="ghost sm setc-edit" onclick="editSet(this)">Edit</button>
       </div>
     </div>
     <div class="card setcard">
-      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Your details (invoice "From")</span><span class="chev">⌄</span></div>
+      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Your details (invoice "From")</span><span class="setc-ctrls"><button class="ghost setc-edit" onclick="event.stopPropagation();editSet(this)">Edit</button><span class="chev">⌄</span></span></div>
       <div class="setc-body">
         <div class="field"><div class="label">Name</div><input id="s-name" class="locked" readonly></div>
         <div class="field"><div class="label">Address</div><textarea id="s-addr" class="locked" readonly style="min-height:60px"></textarea></div>
         <div class="field"><div class="label">UTR / reference (optional)</div><input id="s-utr" class="locked" readonly></div>
-        <button class="ghost sm setc-edit" onclick="editSet(this)">Edit</button>
       </div>
     </div>
     <div class="card setcard">
-      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Client (invoice "To")</span><span class="chev">⌄</span></div>
+      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Client (invoice "To")</span><span class="setc-ctrls"><button class="ghost setc-edit" onclick="event.stopPropagation();editSet(this)">Edit</button><span class="chev">⌄</span></span></div>
       <div class="setc-body">
         <div class="field"><div class="label">Company</div><input id="s-client" class="locked" readonly placeholder="Client company name"></div>
         <div class="field"><div class="label">Client address</div><textarea id="s-client-addr" class="locked" readonly style="min-height:60px"></textarea></div>
-        <button class="ghost sm setc-edit" onclick="editSet(this)">Edit</button>
       </div>
     </div>
     <div class="card setcard">
-      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Payment details (shown on invoice)</span><span class="chev">⌄</span></div>
+      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Payment details (shown on invoice)</span><span class="setc-ctrls"><button class="ghost setc-edit" onclick="event.stopPropagation();editSet(this)">Edit</button><span class="chev">⌄</span></span></div>
       <div class="setc-body">
         <div class="field"><div class="label">Bank details / payment terms</div>
           <textarea id="s-bank" class="locked" readonly style="min-height:60px" placeholder="Account name, sort code, account no. Payment within 7 days."></textarea></div>
-        <button class="ghost sm setc-edit" onclick="editSet(this)">Edit</button>
       </div>
     </div>
     <div class="card setcard">
-      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Invoice email</span><span class="chev">⌄</span></div>
+      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Invoice email</span><span class="setc-ctrls"><button class="ghost setc-edit" onclick="event.stopPropagation();editSet(this)">Edit</button><span class="chev">⌄</span></span></div>
       <div class="setc-body">
         <div class="field"><div class="label">Client's email (reminder — who to send to)</div>
           <input id="s-sendto" class="locked" readonly inputmode="email" placeholder="jordan@…"></div>
@@ -275,7 +272,6 @@
         <div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft)">
           Send opens your share sheet — pick Gmail, the invoice PDF is attached, then set the recipient and send in Gmail.
         </div>
-        <button class="ghost sm setc-edit" onclick="editSet(this)">Edit</button>
       </div>
     </div>
     <div class="card">
@@ -301,7 +297,7 @@
       <button class="ghost" onclick="exportCSV()">Export (CSV)</button>
     </div>
     <div class="btnrow"><button class="danger" onclick="clearAll()">Clear all shifts</button></div>
-    <div style="text-align:center;margin-top:18px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-soft)">Shift Tracker · AOSRI-17</div>
+    <div style="text-align:center;margin-top:18px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-soft)">Shift Tracker · AOSRI-18</div>
   </section>
 </div>
 
@@ -1081,7 +1077,8 @@ async function importJSON(input){
 function toggleSet(head){ head.parentElement.classList.toggle("open"); }
 function editSet(btn){
   const card = btn.closest(".setcard");
-  const fields = card.querySelectorAll("input,textarea,select");
+  card.classList.add("open");
+  const fields = card.querySelectorAll(".setc-body input,.setc-body textarea,.setc-body select");
   const start = btn.textContent.trim() === "Edit";
   fields.forEach(f=>{
     f.classList.toggle("locked", !start);
