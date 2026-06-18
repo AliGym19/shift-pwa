@@ -8,6 +8,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Shift Tracker</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="vendor/tesseract/tesseract.min.js"></script>
 <style>
   :root{
@@ -43,7 +44,7 @@
   .setc-ctrls{display:flex;align-items:center;gap:12px;flex:none}
   .setc-edit{width:auto;padding:6px 14px;font-size:13px;margin:0;border-radius:8px}
   .setc-body input:not(.locked),.setc-body textarea:not(.locked),.setc-body select:not(.locked){background:var(--green-soft);border-color:var(--green)}
-  input.locked,textarea.locked,select.locked{background:transparent;border-color:transparent;padding:4px 0}
+  input.locked,textarea.locked,select.locked{background:var(--paper);border:1px solid var(--line);padding:11px 12px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
   .label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:5px}
   input,textarea,select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;
@@ -82,10 +83,19 @@
     letter-spacing:.08em;text-transform:uppercase;padding:16px 4px;border-radius:0}
   nav button.on{color:#fff;border-top:2px solid var(--green)}
   .empty{text-align:center;color:var(--ink-soft);padding:36px 16px;font-size:14px}
-  #dropzone,#inv-drop{border:2px dashed var(--line);border-radius:10px;padding:28px 16px;text-align:center;
+  #dropzone,#inv-drop,#shift-drop,#bd-drop{border:2px dashed var(--line);border-radius:10px;padding:28px 16px;text-align:center;
     font-family:var(--mono);font-size:13px;color:var(--ink-soft);cursor:pointer;line-height:1.6;
     transition:border-color .15s,background .15s}
-  #dropzone.drag,#inv-drop.drag{border-color:var(--green);background:var(--green-soft)}
+  #dropzone.drag,#inv-drop.drag,#shift-drop.drag,#bd-drop.drag{border-color:var(--green);background:var(--green-soft)}
+  /* pay-breakdown verification report */
+  .vrow{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line);font-family:var(--mono);font-size:13px}
+  .vrow:last-child{border-bottom:none}
+  .vrow .vl{color:var(--ink-soft)}
+  .vtag{font-family:var(--mono);font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap}
+  .vtag.ok{background:var(--green-soft);color:var(--green)}
+  .vtag.warn{background:#FBF1E0;color:var(--amber)}
+  .vtag.bad{background:#F7E4E2;color:var(--red)}
+  .vsec{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin:14px 0 4px}
   .hide{display:none}
   .money{color:var(--green)}
   /* invoice print view */
@@ -204,6 +214,26 @@
     </div>
   </section>
 
+  <!-- ════════ BREAKDOWN TAB ════════ -->
+  <section id="tab-breakdown" class="hide">
+    <div class="card" style="border-color:var(--green)">
+      <div class="label" style="color:var(--green)">Check a pay breakdown</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin:6px 0 10px">
+        Upload the hours breakdown you were sent (Excel, CSV, or a clear photo). I'll line it up against the shifts you've logged and your rate, flag anything that doesn't match, and draft an email you can send back.
+      </div>
+      <div id="bd-drop" onclick="document.getElementById('bd-in').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="event.preventDefault();this.classList.remove('drag');dropBreakdown(event)">
+        <div style="font-size:26px">📑</div>
+        <div>Drop a pay breakdown here<br>or tap to pick a file</div>
+      </div>
+      <input type="file" id="bd-in" accept=".xlsx,.xls,.csv,image/*,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" class="hide" onchange="importBreakdown(this)">
+      <div id="bd-status" class="hide" style="margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--ink-soft)"></div>
+    </div>
+    <div id="bd-report" class="hide"></div>
+  </section>
+
   <!-- ════════ SETTINGS TAB ════════ -->
   <section id="tab-settings" class="hide">
     <div class="card" style="border-color:var(--green)">
@@ -228,16 +258,23 @@
       </div>
     </div>
     <div class="card setcard">
-      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Shift end</span><span class="setc-ctrls"><button class="ghost setc-edit" onclick="event.stopPropagation();editSet(this)">Edit</button><span class="chev">⌄</span></span></div>
+      <div class="setc-head" onclick="toggleSet(this)"><span class="label">Shift times</span><span class="setc-ctrls"><button class="ghost setc-edit" onclick="event.stopPropagation();editSet(this)">Edit</button><span class="chev">⌄</span></span></div>
       <div class="setc-body">
         <div class="field">
-          <div class="label">“Actual end” means the moment you…</div>
+          <div class="label">A new shift's start time defaults to…</div>
+          <select id="s-startmode" class="locked" disabled>
+            <option value="parsed">The start time read from the route</option>
+            <option value="empty">Empty — I'll type it in</option>
+          </select>
+        </div>
+        <div class="field">
+          <div class="label">“End” means the moment you…</div>
           <select id="s-endmode" class="locked" disabled>
             <option value="job">Leave the last job</option>
             <option value="depot">Leave the depot</option>
           </select>
         </div>
-        <div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft)">These are different times, so this changes your worked hours — and your effective £/hr.</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft)">End is different from leaving the depot vs the last job, so this changes your worked hours — and your effective £/hr.</div>
       </div>
     </div>
     <div class="card setcard">
@@ -275,21 +312,26 @@
       </div>
     </div>
     <div class="card">
+      <div class="label">Import past shifts</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin:6px 0 10px">
+        Drop a backup (.json), a CSV export, or a WhatsApp chat export (.txt) — I'll work out which it is.
+      </div>
+      <div class="field"><div class="label">Your name / tag in the group (only needed for WhatsApp)</div>
+        <input id="s-tag" placeholder="Ali"></div>
+      <div id="shift-drop" onclick="document.getElementById('shift-in').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="event.preventDefault();this.classList.remove('drag');dropShiftFile(event)">
+        <div style="font-size:26px">🗂️</div>
+        <div>Drop a file here<br>or tap to pick one</div>
+      </div>
+      <input type="file" id="shift-in" accept=".json,.csv,.txt,.tsv,text/*,application/json" class="hide" onchange="importShiftFile(this)">
+      <div id="import-status" style="margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--ink-soft)"></div>
+    </div>
+    <div class="card">
       <div class="label">Feedback</div>
       <div style="font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin-top:6px">Here's my WhatsApp number, feedback will be appreciated: 07393725097</div>
       <button onclick="openFeedback()" style="margin-top:10px">Message on WhatsApp</button>
-    </div>
-    <div class="card">
-      <div class="label">Import past shifts</div>
-      <div class="field" style="margin-top:8px"><div class="label">Your name / tag in the group (filters messages)</div>
-        <input id="s-tag" placeholder="Ali"></div>
-      <div class="btnrow" style="margin-top:0">
-        <button class="ghost" onclick="document.getElementById('wa-in').click()">WhatsApp export (.txt)</button>
-        <button class="ghost" onclick="document.getElementById('json-in').click()">Seed file (.json)</button>
-      </div>
-      <input type="file" id="wa-in" accept=".txt,text/plain" class="hide" onchange="importWhatsApp(this)">
-      <input type="file" id="json-in" accept=".json,application/json" class="hide" onchange="importJSON(this)">
-      <div id="import-status" style="margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--ink-soft)"></div>
     </div>
     <button onclick="saveSettings()">Save settings</button>
     <div class="btnrow">
@@ -297,7 +339,7 @@
       <button class="ghost" onclick="exportCSV()">Export (CSV)</button>
     </div>
     <div class="btnrow"><button class="danger" onclick="clearAll()">Clear all shifts</button></div>
-    <div style="text-align:center;margin-top:18px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-soft)">Shift Tracker · AOSRI-18</div>
+    <div style="text-align:center;margin-top:18px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-soft)">Shift Tracker · AOSRI-21</div>
   </section>
 </div>
 
@@ -306,6 +348,7 @@
 <nav>
   <button id="nav-log" class="on" onclick="show('log')">Log</button>
   <button id="nav-invoice" onclick="show('invoice')">Invoice</button>
+  <button id="nav-breakdown" onclick="show('breakdown')">Breakdown</button>
   <button id="nav-settings" onclick="show('settings')">Settings</button>
 </nav>
 
@@ -314,7 +357,7 @@
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } };
 let shifts = load("shifts-v1", []);
 let settings = load("settings-v1", {});
-settings = Object.assign({ rate:"", invNo:1, name:"", addr:"", utr:"", client:"", clientAddr:"", bank:"", key:"", sendTo:"", sendFrom:"", msg:"", webhook:"", tag:"", endMode:"job", periods:["day","week","month","all"] }, settings);
+settings = Object.assign({ rate:"", invNo:1, name:"", addr:"", utr:"", client:"", clientAddr:"", bank:"", key:"", sendTo:"", sendFrom:"", msg:"", webhook:"", tag:"", startMode:"parsed", endMode:"job", periods:["day","week","month","all"] }, settings);
 let lastInvoice = null;
 let invRows = [];
 let drops = []; // draft drops buffer
@@ -455,7 +498,7 @@ function toggleCO(id){
   btn.className = hidden ? "sm" : "danger-solid sm";
 }
 function show(tab){
-  for (const t of ["log","invoice","settings"]){
+  for (const t of ["log","invoice","breakdown","settings"]){
     $("tab-"+t).classList.toggle("hide", t!==tab);
     $("nav-"+t).classList.toggle("on", t===tab);
   }
@@ -722,10 +765,11 @@ function closeout(s){
 
 function coFormHTML(s){
   const needRate = !parseFloat(settings.rate);
+  const startVal = s.aStart || (settings.startMode==="empty" ? "" : (s.start||""));
   return `
     <div class="row">
-      <div><div class="label">Actual start:</div><input id="cs-${s.id}" value="${s.aStart||s.start||""}" placeholder="06:23"></div>
-      <div><div class="label">${settings.endMode==="depot"?"Left Depot:":"Last Job:"}</div><input id="ce-${s.id}" value="${s.aEnd||""}" placeholder="16:30"></div>
+      <div><div class="label">Start:</div><input id="cs-${s.id}" value="${startVal}" placeholder="06:23"></div>
+      <div><div class="label">End:</div><input id="ce-${s.id}" value="${s.aEnd||""}" placeholder="16:30"></div>
     </div>
     <button class="ghost sm" style="margin-top:8px" onclick="stampNow(${s.id})">Finished now</button>
     <label class="brk"><input type="checkbox" id="cb-${s.id}" ${s.tookBreak?"checked":""}> Took the ${s.brk||"0:30"} break</label>
@@ -816,17 +860,21 @@ function renderInvoiceHTML(inv, stat=false){
   due.setDate(d.getDate() + dl);
   const dt = x => x.toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",year:"numeric"});
   const num = n => (Math.round(n*100)/100).toFixed(2);
+  const amt = r => (r.qty!=null ? r.qty*r.unit : 0) + (r.bonus||0) + (r.add||0) - (r.deduct||0);
   const rows = invRows.map((r,i)=>{
-    if (r.qty==null)
-      return `<tr><td>${r.desc}</td><td class="right">—</td><td class="right"></td><td class="right"></td><td class="right"></td><td class="right">—</td></tr>`;
-    const amt = r.qty*r.unit + (r.bonus||0) + (r.add||0);
+    const descCell = `${r.desc}${r.comment?`<div style="color:var(--ink-soft);font-size:11px">${r.comment}</div>`:""}`;
+    const off = (r.qty==null) && !(r.bonus||r.add||r.deduct);
+    if (off)
+      return `<tr><td>${descCell}</td><td class="right">—</td><td class="right"></td><td class="right"></td><td class="right"></td><td class="right"></td><td class="right">—</td></tr>`;
+    const a = amt(r);
     const bonusCell = stat ? (r.bonus?num(r.bonus):"") : `<input class="inv-in" id="inv-bonus-${i}" inputmode="decimal" oninput="recalcInvoice()" value="${r.bonus||""}">`;
     const addCell   = stat ? (r.add?num(r.add):"")     : `<input class="inv-in" id="inv-add-${i}" inputmode="decimal" oninput="recalcInvoice()" value="${r.add||""}">`;
-    const amtCell   = stat ? `£ ${num(amt)}` : `£ <span id="inv-amt-${i}">${num(amt)}</span>`;
-    return `<tr><td>${r.desc}</td><td class="right">${num(r.qty)}</td><td class="right">${num(r.unit)}</td>
-      <td class="right">${bonusCell}</td><td class="right">${addCell}</td><td class="right">${amtCell}</td></tr>`;
+    const dedCell   = stat ? (r.deduct?num(r.deduct):""): `<input class="inv-in" id="inv-deduct-${i}" inputmode="decimal" oninput="recalcInvoice()" value="${r.deduct||""}">`;
+    const amtCell   = stat ? `£ ${num(a)}` : `£ <span id="inv-amt-${i}">${num(a)}</span>`;
+    return `<tr><td>${descCell}</td><td class="right">${r.qty!=null?num(r.qty):"—"}</td><td class="right">${r.qty!=null?num(r.unit):""}</td>
+      <td class="right">${bonusCell}</td><td class="right">${addCell}</td><td class="right">${dedCell}</td><td class="right">${amtCell}</td></tr>`;
   }).join("");
-  const total = invRows.reduce((a,r)=> a + (r.qty!=null ? r.qty*r.unit+(r.bonus||0)+(r.add||0) : 0), 0);
+  const total = invRows.reduce((a,r)=> a + amt(r), 0);
   const totalCell = stat ? `£ ${num(total)}` : `£ <span id="inv-total">${num(total)}</span>`;
   return `
     <div class="inv-head">
@@ -843,11 +891,21 @@ function renderInvoiceHTML(inv, stat=false){
     </div>
     <div class="inv-billto"><div class="label">Bill to</div>${settings.billTo?settings.billTo+"<br>":""}${settings.client||""}</div>
     <table>
-      <tr><th>Description</th><th class="right">Qty</th><th class="right">Unit price</th><th class="right">Bonus</th><th class="right">Additional pay</th><th class="right">Amount</th></tr>
+      <tr><th>Description</th><th class="right">Hrs</th><th class="right">Rate</th><th class="right">Bonus</th><th class="right">Add'l</th><th class="right">Deduct</th><th class="right">Amount</th></tr>
       ${rows}
-      <tr class="tot"><td colspan="5">Total</td><td class="right">${totalCell}</td></tr>
+      <tr class="tot"><td colspan="6">Total</td><td class="right">${totalCell}</td></tr>
     </table>
     ${settings.footer?`<div class="inv-footer">${settings.footer.replace(/\n/g,"<br>")}</div>`:""}`;
+}
+
+// Shared render tail — used by the weekly generator and the breakdown prefill.
+function showInvoice(inv){
+  lastInvoice = inv;
+  $("invoice-sheet").innerHTML = renderInvoiceHTML(inv);
+  $("invoice-out").classList.remove("hide");
+  $("inv-disclaimer").classList.remove("hide");
+  $("send-status").textContent = "";
+  recalcInvoice();
 }
 
 function buildInvoice(){
@@ -863,31 +921,28 @@ function buildInvoice(){
     const s = w.shifts.find(x=>x.dateISO===iso(d));
     invRows.push({
       desc: d.toLocaleDateString("en-GB",{weekday:"long"}) + " " + d.toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",year:"2-digit"}),
+      comment: "",
       qty: s ? Math.round(hmToMin(s.total)/60*100)/100 : null,
-      unit: rate, bonus:0, add:0
+      unit: rate, bonus:0, add:0, deduct:0
     });
   }
   const inv = { number: parseInt(settings.invNo)||1, date:new Date(), period: weekLabel(w.start) };
-  // compat fields for the email/send path
-  inv.totalMin = w.min;
-  inv.totalAmount = invRows.reduce((a,r)=> a + (r.qty!=null ? r.qty*r.unit : 0), 0);
-  inv.lines = invRows.filter(r=>r.qty!=null).map(r=>({date:r.desc, route:"", hours:r.qty.toFixed(2), amount:r.qty*r.unit}));
-  lastInvoice = inv;
-  $("invoice-sheet").innerHTML = renderInvoiceHTML(inv);
-  $("invoice-out").classList.remove("hide");
-  $("inv-disclaimer").classList.remove("hide");
-  $("send-status").textContent = "";
-  recalcInvoice();
+  inv.totalMin = w.min;   // compat field for the email/send path
+  showInvoice(inv);
   settings.invNo = (parseInt(settings.invNo)||1) + 1; saveS();
 }
 
 function recalcInvoice(){
   let total = 0;
   invRows.forEach((r,i)=>{
-    if (r.qty==null) return;
-    r.bonus = parseFloat($("inv-bonus-"+i)?.value)||0;
-    r.add   = parseFloat($("inv-add-"+i)?.value)||0;
-    const amt = r.qty*r.unit + r.bonus + r.add;
+    if (!$("inv-bonus-"+i) && !$("inv-amt-"+i)){   // a day off with no extras — fixed 0
+      total += (r.qty!=null ? r.qty*r.unit : 0) + (r.bonus||0) + (r.add||0) - (r.deduct||0);
+      return;
+    }
+    r.bonus  = parseFloat($("inv-bonus-"+i)?.value)||0;
+    r.add    = parseFloat($("inv-add-"+i)?.value)||0;
+    r.deduct = parseFloat($("inv-deduct-"+i)?.value)||0;
+    const amt = (r.qty!=null ? r.qty*r.unit : 0) + r.bonus + r.add - r.deduct;
     const cell = $("inv-amt-"+i); if (cell) cell.textContent = (Math.round(amt*100)/100).toFixed(2);
     total += amt;
   });
@@ -928,24 +983,32 @@ function buildPDF(inv){
   if (settings.client){ doc.text(settings.client,20,y); y+=5; }
   y+=5;
 
-  const C = {desc:20, qty:104, unit:126, bonus:148, add:168, amt:190};
-  doc.setFont("helvetica","bold"); doc.setFontSize(8);
-  doc.text("DESCRIPTION",C.desc,y); doc.text("QTY",C.qty,y,{align:"right"});
-  doc.text("UNIT",C.unit,y,{align:"right"}); doc.text("BONUS",C.bonus,y,{align:"right"});
-  doc.text("ADD'L",C.add,y,{align:"right"}); doc.text("AMOUNT",C.amt,y,{align:"right"});
+  const C = {desc:20, qty:96, unit:114, bonus:133, add:152, deduct:170, amt:190};
+  doc.setFont("helvetica","bold"); doc.setFontSize(7.5);
+  doc.text("DESCRIPTION",C.desc,y); doc.text("HRS",C.qty,y,{align:"right"});
+  doc.text("RATE",C.unit,y,{align:"right"}); doc.text("BONUS",C.bonus,y,{align:"right"});
+  doc.text("ADD'L",C.add,y,{align:"right"}); doc.text("DEDUCT",C.deduct,y,{align:"right"});
+  doc.text("AMOUNT",C.amt,y,{align:"right"});
   y+=2; doc.line(20,y,190,y); y+=5;
-  doc.setFont("helvetica","normal"); doc.setFontSize(10);
+  doc.setFont("helvetica","normal"); doc.setFontSize(9.5);
   let total = 0;
   for (const r of invRows){
+    const amt = (r.qty!=null ? r.qty*r.unit : 0) + (r.bonus||0) + (r.add||0) - (r.deduct||0);
+    const off = (r.qty==null) && !(r.bonus||r.add||r.deduct);
     doc.text(r.desc, C.desc, y);
-    if (r.qty==null){ doc.text("—",C.amt,y,{align:"right"}); y+=6; if(y>272){doc.addPage();y=20;} continue; }
-    const amt = r.qty*r.unit + (r.bonus||0) + (r.add||0); total += amt;
-    doc.text(num(r.qty),C.qty,y,{align:"right"});
-    doc.text(num(r.unit),C.unit,y,{align:"right"});
-    if (r.bonus) doc.text(num(r.bonus),C.bonus,y,{align:"right"});
-    if (r.add)   doc.text(num(r.add),C.add,y,{align:"right"});
-    doc.text("£ "+num(amt),C.amt,y,{align:"right"});
-    y+=6; if(y>272){doc.addPage();y=20;}
+    if (off){ doc.text("—",C.qty,y,{align:"right"}); doc.text("—",C.amt,y,{align:"right"}); }
+    else {
+      total += amt;
+      if (r.qty!=null){ doc.text(num(r.qty),C.qty,y,{align:"right"}); doc.text(num(r.unit),C.unit,y,{align:"right"}); }
+      else doc.text("—",C.qty,y,{align:"right"});
+      if (r.bonus)  doc.text(num(r.bonus),C.bonus,y,{align:"right"});
+      if (r.add)    doc.text(num(r.add),C.add,y,{align:"right"});
+      if (r.deduct) doc.text(num(r.deduct),C.deduct,y,{align:"right"});
+      doc.text("£ "+num(amt),C.amt,y,{align:"right"});
+    }
+    y+=5;
+    if (r.comment){ doc.setFontSize(7.5); doc.setTextColor(120); doc.text(String(r.comment),C.desc+2,y); doc.setTextColor(0); doc.setFontSize(9.5); y+=4; }
+    if(y>272){doc.addPage();y=20;}
   }
   doc.line(20,y,190,y); y+=6;
   doc.setFont("helvetica","bold"); doc.text("TOTAL",20,y); doc.text("£ "+num(total),C.amt,y,{align:"right"}); y+=10;
@@ -1000,6 +1063,329 @@ async function confirmSend(){
   }
 }
 
+/* ───────── pay-breakdown verification ───────── */
+let lastBreakdown = null;
+let bdEmailSubject = "";
+const bdNorm = s => String(s==null?"":s).trim().toLowerCase().replace(/\s+/g," ");
+
+function bdStatus(msg){ const s=$("bd-status"); s.textContent=msg; s.classList.remove("hide"); }
+
+// Route-time cells are written like 10.27 / 7.32 — clock time (H:MM) with a dot
+// for the colon, which is how this app logs shift totals. Read int part as hours,
+// the 2-dp fraction as minutes. Falls back to decimal-hours if the fraction looks
+// like real decimals (>0.59). Returns whole minutes, or null.
+function clockNumToMin(v){
+  if (v == null || v === "") return null;
+  if (typeof v === "string"){
+    const c = v.match(/(\d{1,2}):(\d{2})/); if (c) return +c[1]*60 + +c[2];
+    v = parseFloat(v.replace(",", "."));
+  }
+  if (!isFinite(v)) return null;
+  const h = Math.floor(v + 1e-9), fr = Math.round((v - h) * 100);
+  return (fr >= 0 && fr <= 59) ? h*60 + fr : Math.round(v*60);
+}
+
+function dropBreakdown(e){ const f=[...(e.dataTransfer?.files||[])][0]; if(f) routeBreakdown(f); }
+async function importBreakdown(input){ const f=input.files?.[0]; if(!f) return; input.value=""; routeBreakdown(f); }
+
+async function routeBreakdown(file){
+  const name = (file.name||"").toLowerCase();
+  bdStatus("Reading breakdown…");
+  try{
+    if (/\.(xlsx|xlsm|xls|csv)$/.test(name) || /sheet|excel|csv/.test(file.type)){
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type:"array", cellDates:true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const grid = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:null });
+      finishBreakdown(parseBreakdownGrid(grid));
+    } else if (file.type.startsWith("image/")){
+      const w = await ocr();
+      const src = await preprocessForOCR(file);
+      let data; try { ({data} = await w.recognize(src)); } catch { ({data} = await w.recognize(file)); }
+      finishBreakdown(parseBreakdownText(data.text||""), true);
+    } else if (/\.pdf$/.test(name) || file.type==="application/pdf"){
+      bdStatus("PDFs can't be read directly yet — open the breakdown, screenshot it, and drop the image. Excel or CSV is most reliable.");
+    } else {
+      bdStatus("I can read Excel (.xlsx/.xls), CSV, or a photo of the breakdown. For Word/PDF, export to Excel or screenshot it.");
+    }
+  }catch(err){ bdStatus("Couldn't read that file: " + (err.message||err) + ". Excel or CSV works best."); }
+}
+
+function finishBreakdown(bd, fromImage){
+  if (!bd || (!bd.days.length && bd.totals.grand==null)){
+    bdStatus("Couldn't find a hours table in that file. Excel or CSV in the same layout as your breakdown works best."); return;
+  }
+  lastBreakdown = bd;
+  const findings = verifyBreakdown(bd);
+  renderBreakdownReport(bd, findings, fromImage);
+  bdStatus(`Read ${bd.days.filter(d=>d.routeMin!=null).length} working day(s). ${findings.issues.length?findings.issues.length+" thing(s) to check below.":"Looks consistent — see below."}`);
+}
+
+// Label-driven parse — resilient to the leading blank column and minor layout shifts.
+function parseBreakdownGrid(grid){
+  const out = { name:"", street:"", town:"", postcode:"", payDate:null, rate:null, days:[], weekly:{}, totals:{} };
+  const findLabel = labels => {
+    for (let r=0;r<grid.length;r++) for (let c=0;c<grid[r].length;c++){
+      const cell = bdNorm(grid[r][c]);
+      if (cell && labels.some(l => cell===l || cell.startsWith(l))){
+        for (let k=c+1;k<grid[r].length;k++) if (grid[r][k]!=null && String(grid[r][k]).trim()!=="") return grid[r][k];
+        return null;
+      }
+    }
+    return null;
+  };
+  out.name     = findLabel(["sub contractor","subcontractor"]) || "";
+  out.street   = findLabel(["street address","address"]) || "";
+  out.town     = findLabel(["town","city"]) || "";
+  out.postcode = findLabel(["postcode","post code"]) || "";
+  const pd = findLabel(["pay date","payment date"]); out.payDate = pd instanceof Date ? pd : null;
+
+  let hr=-1; const cols={};
+  for (let r=0;r<grid.length;r++){
+    const cells = grid[r].map(bdNorm);
+    if (cells.includes("route time") || cells.includes("route")){
+      hr=r;
+      grid[r].forEach((v,i)=>{ const n=bdNorm(v);
+        if (n.startsWith("day")) cols.day=i;
+        else if (n==="date") cols.date=i;
+        else if (n.startsWith("route")) cols.route=i;
+        else if (n.startsWith("bonus")) cols.bonus=i;
+        else if (n.startsWith("additional")) cols.add=i;
+        else if (n.startsWith("deduction")) cols.deduct=i;
+        else if (n.startsWith("comment")) cols.comment=i;
+      });
+      break;
+    }
+  }
+  if (hr<0) return out;
+  const numAt=(row,i)=>{ if(i==null||row[i]==null||row[i]==="") return null; const f=parseFloat(String(row[i]).replace(",",".")); return isFinite(f)?f:null; };
+  const DAYS=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+  for (let r=hr+1;r<grid.length;r++){
+    const row=grid[r]||[]; const dayCell=bdNorm(row[cols.day]);
+    if (dayCell.startsWith("total")){
+      out.totals.routeHoursStated = numAt(row, cols.route);
+      out.weekly.bonus = numAt(row, cols.bonus);
+      out.weekly.bonusComment = cols.comment!=null ? (row[cols.comment]||"") : "";
+      for (let k=r;k<Math.min(grid.length,r+6);k++){
+        const lab=bdNorm((grid[k]||[])[cols.day]);
+        if (lab.startsWith("rate")) out.rate = numAt(grid[k], cols.route);
+        if (lab.startsWith("total pay")){
+          out.totals.routePay = numAt(grid[k], cols.route);
+          out.totals.bonus = numAt(grid[k], cols.bonus);
+          out.totals.add = numAt(grid[k], cols.add);
+          out.totals.deduct = numAt(grid[k], cols.deduct);
+          out.totals.grand = numAt(grid[k], cols.comment) ?? numAt(grid[k], cols.add);
+        }
+      }
+      break;
+    }
+    if (!DAYS.includes(dayCell)) continue;
+    const dt=row[cols.date];
+    out.days.push({
+      day: row[cols.day], dateISO: dt instanceof Date ? iso(dt) : "",
+      routeMin: clockNumToMin(row[cols.route]), routeRaw: numAt(row, cols.route),
+      bonus: numAt(row, cols.bonus), add: numAt(row, cols.add),
+      deduct: numAt(row, cols.deduct), comment: cols.comment!=null ? (row[cols.comment]||"") : ""
+    });
+  }
+  return out;
+}
+
+// Best-effort parse of OCR'd text (a photo of the breakdown). Dates usually
+// can't be read, so per-day date matching is skipped; totals/pay still verify.
+function parseBreakdownText(text){
+  const t=(text||"").replace(/\u00a0/g," ");
+  const out={ name:"", street:"", town:"", postcode:"", payDate:null, rate:null, days:[], weekly:{}, totals:{} };
+  const grab=re=>(t.match(re)||[])[1];
+  out.name = (grab(/sub\s*contractor\s*[:\-]?\s*([A-Za-z][A-Za-z .'-]{2,40})/i)||"").trim();
+  out.postcode = (grab(/\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/)||"").trim();
+  out.rate = (()=>{ const r=grab(/rate\s*per\s*hour\D{0,6}([0-9]+(?:\.[0-9]+)?)/i); return r?parseFloat(r):null; })();
+  const DAYS=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+  for (const day of DAYS){
+    const m = t.match(new RegExp(day+"[^0-9\\n]{0,20}(\\d{1,2}[.:]\\d{2})","i"));
+    if (m) out.days.push({ day, dateISO:"", routeMin:clockNumToMin(m[1]), routeRaw:parseFloat(m[1].replace(":",".")), bonus:null, add:null, deduct:null, comment:"" });
+  }
+  const th=grab(/total\s*hours\D{0,6}([0-9]+(?:\.[0-9]+)?)/i); if(th) out.totals.routeHoursStated=parseFloat(th);
+  const tp=grab(/total\s*pay\D{0,6}([0-9]+(?:\.[0-9]+)?)/i); if(tp) out.totals.routePay=parseFloat(tp);
+  return out;
+}
+
+function verifyBreakdown(bd){
+  const sections=[], issues=[];
+  const money=n=>"£"+(Math.round(n*100)/100).toFixed(2);
+  const fmtNum=n=>n==null?n:String(parseFloat(Number(n).toFixed(2)));   // 27.759999.. -> "27.76"
+  const appRate=parseFloat(settings.rate)||null;
+  const bdRate=bd.rate||null;
+
+  // who it's for
+  const idRows=[];
+  if (bd.name){
+    const ok = settings.name && bdNorm(settings.name)===bdNorm(bd.name);
+    idRows.push({l:"Name", r:bd.name, tag: settings.name ? (ok?"ok":"warn") : "warn"});
+    if (settings.name && !ok) issues.push(`The breakdown is addressed to "${bd.name}", but your saved name is "${settings.name}".`);
+  }
+  if (bd.postcode){
+    const ok = settings.addr && bdNorm(settings.addr).includes(bdNorm(bd.postcode));
+    idRows.push({l:"Postcode", r:bd.postcode, tag: settings.addr ? (ok?"ok":"warn") : "warn"});
+  }
+  if (bd.payDate) idRows.push({l:"Pay date", r:fmtFull(bd.payDate), tag:"ok"});
+  if (idRows.length) sections.push({title:"Who it's for", rows:idRows});
+
+  // days
+  const dayRows=[];
+  for (const d of bd.days){
+    if (d.routeMin==null){
+      if (d.dateISO){
+        const s=shifts.find(x=>x.dateISO===d.dateISO);
+        if (s && hmToMin(s.total)){ dayRows.push({l:`${d.day} ${d.dateISO}`, r:`no hours on sheet · you logged ${minToWords(hmToMin(s.total))}`, tag:"warn"});
+          issues.push(`${d.day} ${d.dateISO}: the breakdown shows no hours, but you logged ${minToWords(hmToMin(s.total))}.`); }
+      }
+      continue;
+    }
+    const label=`${d.day}${d.dateISO?" "+d.dateISO:""}`;
+    if (!d.dateISO){ dayRows.push({l:label, r:`${minToWords(d.routeMin)} (couldn't match a date)`, tag:"warn"}); continue; }
+    const s=shifts.find(x=>x.dateISO===d.dateISO);
+    if (!s || !hmToMin(s.total)){
+      dayRows.push({l:label, r:`sheet ${minToWords(d.routeMin)} · nothing logged`, tag:"warn"});
+      issues.push(`${label}: breakdown shows ${minToWords(d.routeMin)} but you have no shift logged for that day.`);
+    } else {
+      const am=hmToMin(s.total);
+      if (am===d.routeMin) dayRows.push({l:label, r:`${minToWords(d.routeMin)} ✓ matches your log`, tag:"ok"});
+      else { dayRows.push({l:label, r:`sheet ${minToWords(d.routeMin)} · you logged ${minToWords(am)}`, tag:"bad"});
+        issues.push(`${label}: breakdown ${minToWords(d.routeMin)} vs your logged ${minToWords(am)} — a ${minToWords(Math.abs(am-d.routeMin))} difference.`); }
+    }
+  }
+  if (dayRows.length) sections.push({title:"Day by day", rows:dayRows});
+
+  // rate & pay
+  const payRows=[];
+  if (bdRate!=null){
+    if (appRate==null) payRows.push({l:"Rate per hour", r:`£${bdRate} (set yours in Settings to cross-check)`, tag:"warn"});
+    else if (Math.abs(appRate-bdRate)<0.005) payRows.push({l:"Rate per hour", r:`£${bdRate} ✓`, tag:"ok"});
+    else { payRows.push({l:"Rate per hour", r:`sheet £${bdRate} · yours £${appRate}`, tag:"bad"}); issues.push(`Rate on the breakdown is £${bdRate}/hr, but your saved rate is £${appRate}/hr.`); }
+  }
+  const workedMin=bd.days.reduce((a,d)=>a+(d.routeMin||0),0);
+  const correctH=workedMin/60;
+  if (workedMin>0 && bd.totals.routeHoursStated!=null){
+    const stated=bd.totals.routeHoursStated;
+    const statedAsMin=Math.round(stated*60);
+    if (Math.abs(correctH-stated)>0.02){
+      payRows.push({l:"Weekly hours", r:`add up to ${minToWords(workedMin)} (${correctH.toFixed(2)}h) · sheet says ${fmtNum(stated)}`, tag:"bad"});
+      issues.push(`Weekly hours: the route times add up to ${minToWords(workedMin)} (${correctH.toFixed(2)} decimal hours), but the sheet's total is ${fmtNum(stated)}. It looks like the times were added up as plain decimals (e.g. 10.27 + 10.17) instead of as clock time — that under-counts you by about ${minToWords(workedMin-statedAsMin)}.`);
+    } else payRows.push({l:"Weekly hours", r:`${minToWords(workedMin)} ✓`, tag:"ok"});
+  }
+  const rateForPay=bdRate||appRate;
+  if (workedMin>0 && rateForPay && bd.totals.grand!=null){
+    const expRoute=correctH*rateForPay;
+    const expGrand=expRoute+(bd.totals.bonus||0)+(bd.totals.add||0)-(bd.totals.deduct||0);
+    const diff=expGrand-bd.totals.grand;
+    if (Math.abs(diff)>0.05){
+      payRows.push({l:"Total pay", r:`sheet ${money(bd.totals.grand)} · should be ~${money(expGrand)}`, tag: diff>0?"bad":"warn"});
+      issues.push(`Total pay: the sheet pays ${money(bd.totals.grand)}. Using ${correctH.toFixed(2)}h × £${rateForPay} plus the same bonus/additional/deductions, it should be about ${money(expGrand)} — ${diff>0?`${money(diff)} short`:`${money(-diff)} over`}.`);
+    } else payRows.push({l:"Total pay", r:`${money(bd.totals.grand)} ✓`, tag:"ok"});
+  } else if (bd.totals.grand!=null){
+    payRows.push({l:"Total pay (sheet)", r:money(bd.totals.grand), tag:"ok"});
+  }
+  if (payRows.length) sections.push({title:"Rate & pay", rows:payRows});
+
+  return { sections, issues, workedMin, correctH };
+}
+
+function renderBreakdownReport(bd, findings, fromImage){
+  const tagTxt={ok:"OK",warn:"CHECK",bad:"MISMATCH"};
+  const secHTML = findings.sections.map(sec=>`
+    <div class="vsec">${sec.title}</div>
+    ${sec.rows.map(r=>`<div class="vrow"><span class="vl">${r.l}</span><span style="display:flex;gap:8px;align-items:center;text-align:right"><span>${r.r}</span><span class="vtag ${r.tag}">${tagTxt[r.tag]}</span></span></div>`).join("")}
+  `).join("");
+  const head = findings.issues.length
+    ? `<div style="font-family:var(--mono);font-size:13px;color:var(--red);font-weight:700">${findings.issues.length} thing${findings.issues.length===1?"":"s"} to query</div>`
+    : `<div style="font-family:var(--mono);font-size:13px;color:var(--green);font-weight:700">Everything lines up</div>`;
+  const note = `<div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-top:12px;line-height:1.6">Route times read as clock time — 10.27 means 10h 27m. ${fromImage?"Read from a photo, so double-check the figures and dates.":""}</div>`;
+  $("bd-report").innerHTML = `
+    <div class="card">
+      ${head}
+      ${secHTML}
+      ${note}
+      <div class="btnrow" style="margin-top:14px">
+        <button onclick="breakdownEmail()">Draft query email</button>
+        <button class="ghost" onclick="invoiceFromBreakdown()">Fill an invoice from this</button>
+      </div>
+      <div id="bd-email" class="hide" style="margin-top:12px"></div>
+    </div>`;
+  $("bd-report").classList.remove("hide");
+}
+
+function bdPeriodLabel(bd){
+  const withD = bd.days.filter(d=>d.dateISO);
+  if (!withD.length) return bd.payDate ? fmtFull(bd.payDate) : "the period on the breakdown";
+  return weekLabel(weekStart(new Date(withD[0].dateISO)));
+}
+
+function breakdownEmail(){
+  const bd=lastBreakdown; if(!bd) return;
+  const findings=verifyBreakdown(bd);
+  const period=bdPeriodLabel(bd);
+  const greeting = settings.client ? `Hi ${settings.client},` : "Hi,";
+  let body;
+  if (!findings.issues.length){
+    body = `${greeting}\n\nThanks for the hours breakdown for ${period} — I've checked it against my records and everything matches. No issues from my side.\n\nBest,\n${settings.name||""}`;
+  } else {
+    body = `${greeting}\n\nThanks for the hours breakdown for ${period}. Checking it against my own records, a few things don't seem to line up:\n\n`
+      + findings.issues.map((s,i)=>`${i+1}. ${s}`).join("\n")
+      + `\n\nCould you take a look and let me know? Happy to share my logged times for the week if that helps.\n\nThanks,\n${settings.name||""}`;
+  }
+  const subject = `Pay query — ${period}`;
+  bdEmailSubject = subject;
+  const box=$("bd-email");
+  box.innerHTML = `
+    <div class="label">Draft email${settings.sendTo?` · to ${settings.sendTo}`:""}</div>
+    <textarea id="bd-email-body" style="min-height:200px;margin-top:6px">${body.replace(/</g,"&lt;")}</textarea>
+    <div class="btnrow">
+      <button onclick="sendBreakdownEmail()">Send / share</button>
+      <button class="ghost" onclick="copyBreakdownEmail()">Copy</button>
+    </div>
+    <div id="bd-email-status" style="margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--ink-soft)"></div>`;
+  box.classList.remove("hide");
+  box.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+
+async function sendBreakdownEmail(){
+  const subject=bdEmailSubject, body=$("bd-email-body").value, status=$("bd-email-status");
+  if (navigator.share){
+    try{ await navigator.share({ title:subject, text:body }); status.textContent="Opened share sheet — pick Gmail/Mail and send."; return; }
+    catch{ /* cancelled or unsupported */ }
+  }
+  const to=settings.sendTo||"";
+  const href=`mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.location.href=href;
+  status.textContent="Opening your email app…";
+}
+async function copyBreakdownEmail(){
+  const body=$("bd-email-body").value, status=$("bd-email-status");
+  try{ await navigator.clipboard.writeText(body); status.textContent="Copied to clipboard."; }
+  catch{ $("bd-email-body").select(); status.textContent="Select-all the text above and copy."; }
+}
+
+// Build an invoice that mirrors every column on the breakdown.
+function invoiceFromBreakdown(){
+  const bd=lastBreakdown; if(!bd) return;
+  const rate=bd.rate||parseFloat(settings.rate)||0;
+  invRows = bd.days.map(d=>({
+    desc: `${d.day}${d.dateISO?" "+new Date(d.dateISO).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",year:"2-digit"}):""}`,
+    comment: d.comment||"",
+    qty: d.routeMin!=null ? Math.round(d.routeMin/60*100)/100 : null,
+    unit: rate, bonus: d.bonus||0, add: d.add||0, deduct: d.deduct||0
+  }));
+  if (bd.weekly && bd.weekly.bonus) invRows.push({ desc:"Weekly bonus", comment:bd.weekly.bonusComment||"", qty:null, unit:rate, bonus:bd.weekly.bonus, add:0, deduct:0 });
+  const workedMin=bd.days.reduce((a,d)=>a+(d.routeMin||0),0);
+  const inv={ number: parseInt(settings.invNo)||1, date:new Date(), period: bdPeriodLabel(bd) };
+  inv.totalMin=workedMin;
+  showInvoice(inv);
+  settings.invNo=(parseInt(settings.invNo)||1)+1; saveS();
+  show("invoice");
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
 /* ───────── imports ───────── */
 // merge rule: match on dateISO — fill blanks on existing shifts, create new otherwise
 function mergeShifts(incoming){
@@ -1022,20 +1408,121 @@ function mergeShifts(incoming){
   return { added, updated };
 }
 
-async function importWhatsApp(input){
+function dropShiftFile(e){
+  const file = [...(e.dataTransfer?.files||[])][0];
+  if (file) routeShiftImport(file);
+}
+async function importShiftFile(input){
   const file = input.files?.[0]; if(!file) return;
   input.value = "";
+  routeShiftImport(file);
+}
+
+// One uploader, many formats. Sniff the contents and route:
+//  1) JSON backup / seed  → mergeShifts
+//  2) CSV (the app's own export, or anything with a date column) → mergeShifts
+//  3) anything else        → treat as a WhatsApp chat export (needs tag + key)
+async function routeShiftImport(file){
+  if (!file) return;
   const status = $("import-status");
+  const name = (file.name||"").toLowerCase();
+  // images / PDFs / office docs can't carry shift data here — point to the right place
+  if (file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|heic|heif|pdf|docx?|xlsx?|pptx?)$/.test(name)){
+    status.textContent = "That looks like an image or document. To add shifts from a route screenshot, use the photo button on the Log tab. This importer takes a backup (.json), a CSV export, or a WhatsApp chat (.txt).";
+    return;
+  }
+  status.textContent = "Reading file…";
+  let text;
+  try { text = await file.text(); }
+  catch(e){ status.textContent = "Couldn't read that file: " + (e.message||e); return; }
+  const trimmed = text.trim();
+
+  // 1) JSON
+  if (trimmed[0] === "[" || trimmed[0] === "{"){
+    try{
+      const recs = JSON.parse(trimmed);
+      const { added, updated } = mergeShifts(Array.isArray(recs) ? recs : [recs]);
+      status.textContent = `Done: ${added} added, ${updated} updated (JSON).`;
+      return;
+    }catch{ /* not valid JSON — fall through */ }
+  }
+
+  // 2) CSV
+  const firstLine = (trimmed.split(/\r?\n/)[0]||"").toLowerCase();
+  if (firstLine.includes("date") && firstLine.includes(",")){
+    try{
+      const recs = parseShiftCSV(trimmed);
+      if (recs.length){
+        const { added, updated } = mergeShifts(recs);
+        status.textContent = `Done: ${added} added, ${updated} updated (CSV).`;
+        return;
+      }
+    }catch{ /* fall through */ }
+  }
+
+  // 3) WhatsApp chat export
+  await importWhatsAppText(text, status);
+}
+
+// Tolerant CSV → shift records. Handles the app's own export header
+// (date,route,total_time,start_time,break,crew,last_drop,drops) and quoted fields.
+function csvRows(text){
+  const rows=[]; let row=[], cur="", q=false;
+  for (let i=0;i<text.length;i++){
+    const c=text[i];
+    if (q){
+      if (c === '"'){ if (text[i+1]==='"'){ cur+='"'; i++; } else q=false; }
+      else cur+=c;
+    } else {
+      if (c === '"') q=true;
+      else if (c === ","){ row.push(cur); cur=""; }
+      else if (c === "\n"){ row.push(cur); rows.push(row); row=[]; cur=""; }
+      else if (c === "\r"){ /* skip */ }
+      else cur+=c;
+    }
+  }
+  if (cur.length || row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r=>r.some(c=>String(c).trim()!==""));
+}
+function parseShiftCSV(text){
+  const rows = csvRows(text);
+  if (rows.length < 2) return [];
+  const head = rows[0].map(h=>h.trim().toLowerCase());
+  const idx = n => head.indexOf(n);
+  const ci = { date:idx("date"), route:idx("route"), total:idx("total_time"),
+    start:idx("start_time"), brk:idx("break"), crew:idx("crew"),
+    last:idx("last_drop"), drops:idx("drops") };
+  const out = [];
+  for (let i=1;i<rows.length;i++){
+    const r = rows[i];
+    const get = k => ci[k]>=0 ? (r[ci[k]]||"").trim() : "";
+    const dateRaw = get("date"); if (!dateRaw) continue;
+    let dateISO = "";
+    if (/^\d{4}-\d{2}-\d{2}/.test(dateRaw)) dateISO = dateRaw.slice(0,10);
+    else { const d = parseUK(dateRaw); if (d) dateISO = iso(d); }
+    if (!dateISO) continue;
+    let code = "", route = "";
+    const m = get("route").match(/^(.*?)\s*R(\d+)\s*$/i);
+    if (m){ code = m[1].trim(); route = m[2]; } else code = get("route");
+    const dropsRaw = get("drops");
+    const drops = dropsRaw ? dropsRaw.split("|").map(p=>({postcode:p.trim(),window:""})).filter(d=>d.postcode) : [];
+    out.push({ dateISO, code, route, total:get("total"), start:get("start"),
+      brk:get("brk"), crew:get("crew"), lastDrop:get("last"), drops });
+  }
+  return out;
+}
+
+async function importWhatsAppText(text, status){
   let key = (settings.key || "").trim();
   if (!key){ key = (prompt("Paste your Anthropic API key for this import (used once, not stored):") || "").trim(); }
   if (!key){ status.textContent = "Cancelled — no key entered."; return }
-  const tag = (settings.tag || "").trim();
-  if (!tag){ status.textContent = "Set your name/tag first so I can filter the chat."; return }
+  const tag = (settings.tag || $("s-tag")?.value || "").trim();
+  if (!tag){ status.textContent = "Add your name/tag above so I can find your shifts in the chat."; return }
+  settings.tag = tag; saveS();
   status.textContent = "Filtering chat…";
-  const text = await file.text();
   // keep only lines mentioning the tag (case-insensitive), cap to keep tokens sane
   const lines = text.split("\n").filter(l => l.toLowerCase().includes(tag.toLowerCase()));
-  if (!lines.length){ status.textContent = `No messages mentioning "${tag}" found in that export.`; return }
+  if (!lines.length){ status.textContent = `No messages mentioning "${tag}" found in that file.`; return }
   const chunk = lines.slice(-400).join("\n"); // most recent 400 mentions
   status.textContent = `Parsing ${lines.length} messages…`;
   try{
@@ -1062,36 +1549,38 @@ ${chunk}`}]
   }catch(e){ status.textContent = "Parse failed: " + e.message }
 }
 
-async function importJSON(input){
-  const file = input.files?.[0]; if(!file) return;
-  input.value = "";
-  const status = $("import-status");
-  try{
-    const recs = JSON.parse(await file.text());
-    const { added, updated } = mergeShifts(recs);
-    status.textContent = `Done: ${added} added, ${updated} updated.`;
-  }catch(e){ status.textContent = "Couldn't read that JSON: " + e.message }
+
+// Header tap = expand / collapse only. Independent per card.
+function toggleSet(head){ head.closest(".setcard").classList.toggle("open"); }
+
+// Lock/unlock one card's fields. Touches only this card, so several cards can
+// be in edit mode at the same time.
+function setEditing(card, on){
+  card.querySelectorAll(".setc-body input,.setc-body textarea,.setc-body select").forEach(f=>{
+    f.classList.toggle("locked", !on);
+    if (f.tagName === "SELECT") f.disabled = !on; else f.readOnly = !on;
+  });
+  const btn = card.querySelector(".setc-edit");
+  if (btn) btn.textContent = on ? "Done" : "Edit";
 }
-
-
-function toggleSet(head){ head.parentElement.classList.toggle("open"); }
 function editSet(btn){
   const card = btn.closest(".setcard");
-  card.classList.add("open");
-  const fields = card.querySelectorAll(".setc-body input,.setc-body textarea,.setc-body select");
-  const start = btn.textContent.trim() === "Edit";
-  fields.forEach(f=>{
-    f.classList.toggle("locked", !start);
-    if (f.tagName === "SELECT") f.disabled = !start; else f.readOnly = !start;
-  });
-  if (start){ btn.textContent = "Done"; const f = fields[0]; if (f && f.focus) f.focus(); }
-  else { btn.textContent = "Edit"; settings = readSettingsForm(); saveS(); }
+  const entering = btn.textContent.trim() === "Edit";
+  card.classList.add("open");              // entering edit always reveals the body
+  setEditing(card, entering);              // this card only — others stay as they are
+  if (entering){
+    const f = card.querySelector(".setc-body input,.setc-body textarea,.setc-body select");
+    if (f && f.focus) try { f.focus(); } catch {}
+  } else {
+    settings = readSettingsForm(); saveS(); // Done commits everything currently in the form
+  }
 }
 function fillSettings(){
   $("s-rate").value = settings.rate;
   $("s-name").value = settings.name; $("s-addr").value = settings.addr; $("s-utr").value = settings.utr;
   $("s-client").value = settings.client; $("s-client-addr").value = settings.clientAddr;
   $("s-bank").value = settings.bank;
+  $("s-startmode").value = settings.startMode || "parsed";
   $("s-endmode").value = settings.endMode || "job";
   $("s-sendto").value = settings.sendTo; $("s-msg").value = settings.msg; $("s-tag").value = settings.tag;
 }
@@ -1101,6 +1590,7 @@ function readSettingsForm(){
     name:$("s-name").value, addr:$("s-addr").value, utr:$("s-utr").value,
     client:$("s-client").value, clientAddr:$("s-client-addr").value,
     bank:$("s-bank").value,
+    startMode:$("s-startmode").value,
     endMode:$("s-endmode").value,
     sendTo:$("s-sendto").value, msg:$("s-msg").value, tag:$("s-tag").value };
 }
