@@ -339,7 +339,7 @@
       <button class="ghost" onclick="exportCSV()">Export (CSV)</button>
     </div>
     <div class="btnrow"><button class="danger" onclick="clearAll()">Clear all shifts</button></div>
-    <div style="text-align:center;margin-top:18px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-soft)">Shift Tracker · AOSRI-21</div>
+    <div style="text-align:center;margin-top:18px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--ink-soft)">Shift Tracker · AOSRI-22</div>
   </section>
 </div>
 
@@ -854,28 +854,43 @@ function fillWeekPicker(){
     : `<option value="">No weeks logged yet</option>`;
 }
 
+/* ───────── money & hours (integer math — no float rounding drift) ─────────
+   Money is handled in integer "mills" = thousandths of a pound, so the sheet's
+   sub-penny figures (e.g. 5.135) stay exact. Hours on the breakdown are DECIMAL
+   hours (1.5 = 1h30m), per the agency. */
+const toMills   = x => Math.round((parseFloat(x)||0)*1000);                 // £ -> mills
+const fmtMills  = m => { const p=Math.round(m/10), a=Math.abs(p); return (p<0?"-":"")+Math.floor(a/100)+"."+String(a%100).padStart(2,"0"); }; // mills -> "342.82"
+const gbpMills  = m => "£"+fmtMills(m);
+const payMills  = (hours, rateMills) => Math.round((parseFloat(hours)||0)*rateMills); // decimal hrs × rate -> mills
+const hoursToMin = h => {                                                    // decimal hours -> minutes (1.5 -> 90)
+  if (h==null || h==="") return null;
+  if (typeof h==="string"){ const c=h.match(/(\d{1,2}):(\d{2})/); if (c) return +c[1]*60 + +c[2]; h=parseFloat(h.replace(",",".")); }
+  return isFinite(h) ? Math.round(h*60) : null;
+};
+const fmtHrs2 = c => { const a=Math.abs(c); return (c<0?"-":"")+Math.floor(a/100)+"."+String(a%100).padStart(2,"0"); }; // centi-hours -> "27.76"
+
 function renderInvoiceHTML(inv, stat=false){
   const d = inv.date || new Date(), due = new Date(d);
   let dl = (1 - d.getDay() + 7) % 7; if (dl === 0) dl = 7;   // next Monday after issue
   due.setDate(d.getDate() + dl);
   const dt = x => x.toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",year:"numeric"});
-  const num = n => (Math.round(n*100)/100).toFixed(2);
-  const amt = r => (r.qty!=null ? r.qty*r.unit : 0) + (r.bonus||0) + (r.add||0) - (r.deduct||0);
+  const hrs = n => (Math.round(n*100)/100).toString();                       // hours display (not money)
+  const amtMills = r => payMills(r.qty, toMills(r.unit)) + toMills(r.bonus) + toMills(r.add) - toMills(r.deduct);
   const rows = invRows.map((r,i)=>{
     const descCell = `${r.desc}${r.comment?`<div style="color:var(--ink-soft);font-size:11px">${r.comment}</div>`:""}`;
     const off = (r.qty==null) && !(r.bonus||r.add||r.deduct);
     if (off)
       return `<tr><td>${descCell}</td><td class="right">—</td><td class="right"></td><td class="right"></td><td class="right"></td><td class="right"></td><td class="right">—</td></tr>`;
-    const a = amt(r);
-    const bonusCell = stat ? (r.bonus?num(r.bonus):"") : `<input class="inv-in" id="inv-bonus-${i}" inputmode="decimal" oninput="recalcInvoice()" value="${r.bonus||""}">`;
-    const addCell   = stat ? (r.add?num(r.add):"")     : `<input class="inv-in" id="inv-add-${i}" inputmode="decimal" oninput="recalcInvoice()" value="${r.add||""}">`;
-    const dedCell   = stat ? (r.deduct?num(r.deduct):""): `<input class="inv-in" id="inv-deduct-${i}" inputmode="decimal" oninput="recalcInvoice()" value="${r.deduct||""}">`;
-    const amtCell   = stat ? `£ ${num(a)}` : `£ <span id="inv-amt-${i}">${num(a)}</span>`;
-    return `<tr><td>${descCell}</td><td class="right">${r.qty!=null?num(r.qty):"—"}</td><td class="right">${r.qty!=null?num(r.unit):""}</td>
+    const a = amtMills(r);
+    const bonusCell = stat ? (r.bonus?fmtMills(toMills(r.bonus)):"") : `<input class="inv-in" id="inv-bonus-${i}" inputmode="decimal" oninput="recalcInvoice()" value="${r.bonus||""}">`;
+    const addCell   = stat ? (r.add?fmtMills(toMills(r.add)):"")     : `<input class="inv-in" id="inv-add-${i}" inputmode="decimal" oninput="recalcInvoice()" value="${r.add||""}">`;
+    const dedCell   = stat ? (r.deduct?fmtMills(toMills(r.deduct)):""): `<input class="inv-in" id="inv-deduct-${i}" inputmode="decimal" oninput="recalcInvoice()" value="${r.deduct||""}">`;
+    const amtCell   = stat ? `£ ${fmtMills(a)}` : `£ <span id="inv-amt-${i}">${fmtMills(a)}</span>`;
+    return `<tr><td>${descCell}</td><td class="right">${r.qty!=null?hrs(r.qty):"—"}</td><td class="right">${r.qty!=null?fmtMills(toMills(r.unit)):""}</td>
       <td class="right">${bonusCell}</td><td class="right">${addCell}</td><td class="right">${dedCell}</td><td class="right">${amtCell}</td></tr>`;
   }).join("");
-  const total = invRows.reduce((a,r)=> a + amt(r), 0);
-  const totalCell = stat ? `£ ${num(total)}` : `£ <span id="inv-total">${num(total)}</span>`;
+  const total = invRows.reduce((a,r)=> a + amtMills(r), 0);
+  const totalCell = stat ? `£ ${fmtMills(total)}` : `£ <span id="inv-total">${fmtMills(total)}</span>`;
   return `
     <div class="inv-head">
       <div><div class="inv-name">${settings.name||"—"}</div>${(settings.addr||"").replace(/\n/g,"<br>")}</div>
@@ -933,21 +948,21 @@ function buildInvoice(){
 }
 
 function recalcInvoice(){
-  let total = 0;
+  let total = 0;   // mills
   invRows.forEach((r,i)=>{
     if (!$("inv-bonus-"+i) && !$("inv-amt-"+i)){   // a day off with no extras — fixed 0
-      total += (r.qty!=null ? r.qty*r.unit : 0) + (r.bonus||0) + (r.add||0) - (r.deduct||0);
+      total += payMills(r.qty, toMills(r.unit)) + toMills(r.bonus) + toMills(r.add) - toMills(r.deduct);
       return;
     }
     r.bonus  = parseFloat($("inv-bonus-"+i)?.value)||0;
     r.add    = parseFloat($("inv-add-"+i)?.value)||0;
     r.deduct = parseFloat($("inv-deduct-"+i)?.value)||0;
-    const amt = (r.qty!=null ? r.qty*r.unit : 0) + r.bonus + r.add - r.deduct;
-    const cell = $("inv-amt-"+i); if (cell) cell.textContent = (Math.round(amt*100)/100).toFixed(2);
+    const amt = payMills(r.qty, toMills(r.unit)) + toMills(r.bonus) + toMills(r.add) - toMills(r.deduct);
+    const cell = $("inv-amt-"+i); if (cell) cell.textContent = fmtMills(amt);
     total += amt;
   });
-  const t = $("inv-total"); if (t) t.textContent = (Math.round(total*100)/100).toFixed(2);
-  if (lastInvoice) lastInvoice.totalAmount = total;
+  const t = $("inv-total"); if (t) t.textContent = fmtMills(total);
+  if (lastInvoice) lastInvoice.totalAmount = total/1000;
   if (lastInvoice) $("print-root").innerHTML = `<div id="invoice-sheet">${renderInvoiceHTML(lastInvoice, true)}</div>`;
 }
 
@@ -991,27 +1006,27 @@ function buildPDF(inv){
   doc.text("AMOUNT",C.amt,y,{align:"right"});
   y+=2; doc.line(20,y,190,y); y+=5;
   doc.setFont("helvetica","normal"); doc.setFontSize(9.5);
-  let total = 0;
+  let total = 0;   // mills
   for (const r of invRows){
-    const amt = (r.qty!=null ? r.qty*r.unit : 0) + (r.bonus||0) + (r.add||0) - (r.deduct||0);
+    const amt = payMills(r.qty, toMills(r.unit)) + toMills(r.bonus) + toMills(r.add) - toMills(r.deduct);
     const off = (r.qty==null) && !(r.bonus||r.add||r.deduct);
     doc.text(r.desc, C.desc, y);
     if (off){ doc.text("—",C.qty,y,{align:"right"}); doc.text("—",C.amt,y,{align:"right"}); }
     else {
       total += amt;
-      if (r.qty!=null){ doc.text(num(r.qty),C.qty,y,{align:"right"}); doc.text(num(r.unit),C.unit,y,{align:"right"}); }
+      if (r.qty!=null){ doc.text(num(r.qty),C.qty,y,{align:"right"}); doc.text(fmtMills(toMills(r.unit)),C.unit,y,{align:"right"}); }
       else doc.text("—",C.qty,y,{align:"right"});
-      if (r.bonus)  doc.text(num(r.bonus),C.bonus,y,{align:"right"});
-      if (r.add)    doc.text(num(r.add),C.add,y,{align:"right"});
-      if (r.deduct) doc.text(num(r.deduct),C.deduct,y,{align:"right"});
-      doc.text("£ "+num(amt),C.amt,y,{align:"right"});
+      if (r.bonus)  doc.text(fmtMills(toMills(r.bonus)),C.bonus,y,{align:"right"});
+      if (r.add)    doc.text(fmtMills(toMills(r.add)),C.add,y,{align:"right"});
+      if (r.deduct) doc.text(fmtMills(toMills(r.deduct)),C.deduct,y,{align:"right"});
+      doc.text("£ "+fmtMills(amt),C.amt,y,{align:"right"});
     }
     y+=5;
     if (r.comment){ doc.setFontSize(7.5); doc.setTextColor(120); doc.text(String(r.comment),C.desc+2,y); doc.setTextColor(0); doc.setFontSize(9.5); y+=4; }
     if(y>272){doc.addPage();y=20;}
   }
   doc.line(20,y,190,y); y+=6;
-  doc.setFont("helvetica","bold"); doc.text("TOTAL",20,y); doc.text("£ "+num(total),C.amt,y,{align:"right"}); y+=10;
+  doc.setFont("helvetica","bold"); doc.text("TOTAL",20,y); doc.text("£ "+fmtMills(total),C.amt,y,{align:"right"}); y+=10;
   doc.setFont("helvetica","normal"); doc.setFontSize(9);
   for (const l of (settings.footer||"").split("\n").filter(Boolean)){
     const wrapped = doc.splitTextToSize(l, 170); doc.text(wrapped,20,y); y += wrapped.length*5;
@@ -1074,17 +1089,6 @@ function bdStatus(msg){ const s=$("bd-status"); s.textContent=msg; s.classList.r
 // for the colon, which is how this app logs shift totals. Read int part as hours,
 // the 2-dp fraction as minutes. Falls back to decimal-hours if the fraction looks
 // like real decimals (>0.59). Returns whole minutes, or null.
-function clockNumToMin(v){
-  if (v == null || v === "") return null;
-  if (typeof v === "string"){
-    const c = v.match(/(\d{1,2}):(\d{2})/); if (c) return +c[1]*60 + +c[2];
-    v = parseFloat(v.replace(",", "."));
-  }
-  if (!isFinite(v)) return null;
-  const h = Math.floor(v + 1e-9), fr = Math.round((v - h) * 100);
-  return (fr >= 0 && fr <= 59) ? h*60 + fr : Math.round(v*60);
-}
-
 function dropBreakdown(e){ const f=[...(e.dataTransfer?.files||[])][0]; if(f) routeBreakdown(f); }
 async function importBreakdown(input){ const f=input.files?.[0]; if(!f) return; input.value=""; routeBreakdown(f); }
 
@@ -1183,7 +1187,7 @@ function parseBreakdownGrid(grid){
     const dt=row[cols.date];
     out.days.push({
       day: row[cols.day], dateISO: dt instanceof Date ? iso(dt) : "",
-      routeMin: clockNumToMin(row[cols.route]), routeRaw: numAt(row, cols.route),
+      routeMin: hoursToMin(row[cols.route]), routeRaw: numAt(row, cols.route),
       bonus: numAt(row, cols.bonus), add: numAt(row, cols.add),
       deduct: numAt(row, cols.deduct), comment: cols.comment!=null ? (row[cols.comment]||"") : ""
     });
@@ -1203,7 +1207,7 @@ function parseBreakdownText(text){
   const DAYS=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
   for (const day of DAYS){
     const m = t.match(new RegExp(day+"[^0-9\\n]{0,20}(\\d{1,2}[.:]\\d{2})","i"));
-    if (m) out.days.push({ day, dateISO:"", routeMin:clockNumToMin(m[1]), routeRaw:parseFloat(m[1].replace(":",".")), bonus:null, add:null, deduct:null, comment:"" });
+    if (m) out.days.push({ day, dateISO:"", routeMin:hoursToMin(m[1]), routeRaw:parseFloat(m[1].replace(":",".")), bonus:null, add:null, deduct:null, comment:"" });
   }
   const th=grab(/total\s*hours\D{0,6}([0-9]+(?:\.[0-9]+)?)/i); if(th) out.totals.routeHoursStated=parseFloat(th);
   const tp=grab(/total\s*pay\D{0,6}([0-9]+(?:\.[0-9]+)?)/i); if(tp) out.totals.routePay=parseFloat(tp);
@@ -1212,8 +1216,6 @@ function parseBreakdownText(text){
 
 function verifyBreakdown(bd){
   const sections=[], issues=[];
-  const money=n=>"£"+(Math.round(n*100)/100).toFixed(2);
-  const fmtNum=n=>n==null?n:String(parseFloat(Number(n).toFixed(2)));   // 27.759999.. -> "27.76"
   const appRate=parseFloat(settings.rate)||null;
   const bdRate=bd.rate||null;
 
@@ -1231,7 +1233,7 @@ function verifyBreakdown(bd){
   if (bd.payDate) idRows.push({l:"Pay date", r:fmtFull(bd.payDate), tag:"ok"});
   if (idRows.length) sections.push({title:"Who it's for", rows:idRows});
 
-  // days
+  // days — sheet hours are decimal; compare to your logged H:MM shift, both in minutes
   const dayRows=[];
   for (const d of bd.days){
     if (d.routeMin==null){
@@ -1243,52 +1245,52 @@ function verifyBreakdown(bd){
       continue;
     }
     const label=`${d.day}${d.dateISO?" "+d.dateISO:""}`;
-    if (!d.dateISO){ dayRows.push({l:label, r:`${minToWords(d.routeMin)} (couldn't match a date)`, tag:"warn"}); continue; }
+    const sheetTxt=`${d.routeRaw}h (${minToWords(d.routeMin)})`;
+    if (!d.dateISO){ dayRows.push({l:label, r:`${sheetTxt} (couldn't match a date)`, tag:"warn"}); continue; }
     const s=shifts.find(x=>x.dateISO===d.dateISO);
     if (!s || !hmToMin(s.total)){
-      dayRows.push({l:label, r:`sheet ${minToWords(d.routeMin)} · nothing logged`, tag:"warn"});
-      issues.push(`${label}: breakdown shows ${minToWords(d.routeMin)} but you have no shift logged for that day.`);
+      dayRows.push({l:label, r:`sheet ${sheetTxt} · nothing logged`, tag:"warn"});
+      issues.push(`${label}: breakdown shows ${sheetTxt} but you have no shift logged for that day.`);
     } else {
       const am=hmToMin(s.total);
-      if (am===d.routeMin) dayRows.push({l:label, r:`${minToWords(d.routeMin)} ✓ matches your log`, tag:"ok"});
-      else { dayRows.push({l:label, r:`sheet ${minToWords(d.routeMin)} · you logged ${minToWords(am)}`, tag:"bad"});
-        issues.push(`${label}: breakdown ${minToWords(d.routeMin)} vs your logged ${minToWords(am)} — a ${minToWords(Math.abs(am-d.routeMin))} difference.`); }
+      if (Math.abs(am-d.routeMin)<=1) dayRows.push({l:label, r:`${d.routeRaw}h ✓ matches your log`, tag:"ok"});
+      else { dayRows.push({l:label, r:`sheet ${sheetTxt} · you logged ${minToWords(am)}`, tag:"bad"});
+        issues.push(`${label}: the sheet pays ${sheetTxt} but you logged ${minToWords(am)} — a ${minToWords(Math.abs(am-d.routeMin))} difference.`); }
     }
   }
   if (dayRows.length) sections.push({title:"Day by day", rows:dayRows});
 
-  // rate & pay
+  // rate & pay — check the sheet is internally consistent (decimal hours, integer money)
   const payRows=[];
   if (bdRate!=null){
     if (appRate==null) payRows.push({l:"Rate per hour", r:`£${bdRate} (set yours in Settings to cross-check)`, tag:"warn"});
     else if (Math.abs(appRate-bdRate)<0.005) payRows.push({l:"Rate per hour", r:`£${bdRate} ✓`, tag:"ok"});
     else { payRows.push({l:"Rate per hour", r:`sheet £${bdRate} · yours £${appRate}`, tag:"bad"}); issues.push(`Rate on the breakdown is £${bdRate}/hr, but your saved rate is £${appRate}/hr.`); }
   }
-  const workedMin=bd.days.reduce((a,d)=>a+(d.routeMin||0),0);
-  const correctH=workedMin/60;
-  if (workedMin>0 && bd.totals.routeHoursStated!=null){
-    const stated=bd.totals.routeHoursStated;
-    const statedAsMin=Math.round(stated*60);
-    if (Math.abs(correctH-stated)>0.02){
-      payRows.push({l:"Weekly hours", r:`add up to ${minToWords(workedMin)} (${correctH.toFixed(2)}h) · sheet says ${fmtNum(stated)}`, tag:"bad"});
-      issues.push(`Weekly hours: the route times add up to ${minToWords(workedMin)} (${correctH.toFixed(2)} decimal hours), but the sheet's total is ${fmtNum(stated)}. It looks like the times were added up as plain decimals (e.g. 10.27 + 10.17) instead of as clock time — that under-counts you by about ${minToWords(workedMin-statedAsMin)}.`);
-    } else payRows.push({l:"Weekly hours", r:`${minToWords(workedMin)} ✓`, tag:"ok"});
+  const daysWithHrs = bd.days.filter(d=>d.routeRaw!=null);
+  const sumCenti = daysWithHrs.reduce((a,d)=>a+Math.round(d.routeRaw*100),0);   // centi-hours
+  if (daysWithHrs.length && bd.totals.routeHoursStated!=null){
+    const statedCenti=Math.round(bd.totals.routeHoursStated*100);
+    if (Math.abs(sumCenti-statedCenti)>0){
+      payRows.push({l:"Weekly hours", r:`day rows add to ${fmtHrs2(sumCenti)}h · sheet total ${fmtHrs2(statedCenti)}h`, tag:"bad"});
+      issues.push(`Weekly hours: the day rows add up to ${fmtHrs2(sumCenti)}h, but the sheet's stated total is ${fmtHrs2(statedCenti)}h.`);
+    } else payRows.push({l:"Weekly hours", r:`${fmtHrs2(statedCenti)}h ✓`, tag:"ok"});
   }
-  const rateForPay=bdRate||appRate;
-  if (workedMin>0 && rateForPay && bd.totals.grand!=null){
-    const expRoute=correctH*rateForPay;
-    const expGrand=expRoute+(bd.totals.bonus||0)+(bd.totals.add||0)-(bd.totals.deduct||0);
-    const diff=expGrand-bd.totals.grand;
-    if (Math.abs(diff)>0.05){
-      payRows.push({l:"Total pay", r:`sheet ${money(bd.totals.grand)} · should be ~${money(expGrand)}`, tag: diff>0?"bad":"warn"});
-      issues.push(`Total pay: the sheet pays ${money(bd.totals.grand)}. Using ${correctH.toFixed(2)}h × £${rateForPay} plus the same bonus/additional/deductions, it should be about ${money(expGrand)} — ${diff>0?`${money(diff)} short`:`${money(-diff)} over`}.`);
-    } else payRows.push({l:"Total pay", r:`${money(bd.totals.grand)} ✓`, tag:"ok"});
+  const rateMills = toMills(bdRate!=null?bdRate:appRate);
+  if (daysWithHrs.length && rateMills && bd.totals.grand!=null){
+    let expMills = daysWithHrs.reduce((a,d)=>a+payMills(d.routeRaw, rateMills),0);
+    expMills += toMills(bd.totals.bonus||0) + toMills(bd.totals.add||0) - toMills(bd.totals.deduct||0);
+    const grandMills = toMills(bd.totals.grand);
+    if (Math.abs(expMills-grandMills)>5){    // tolerate <0.5p
+      payRows.push({l:"Total pay", r:`sheet ${gbpMills(grandMills)} · works out to ${gbpMills(expMills)}`, tag:"bad"});
+      issues.push(`Total pay: the sheet's grand total is ${gbpMills(grandMills)}, but its own hours × rate plus bonus/additional/deductions works out to ${gbpMills(expMills)} — a ${gbpMills(Math.abs(expMills-grandMills))} difference.`);
+    } else payRows.push({l:"Total pay", r:`${gbpMills(grandMills)} ✓`, tag:"ok"});
   } else if (bd.totals.grand!=null){
-    payRows.push({l:"Total pay (sheet)", r:money(bd.totals.grand), tag:"ok"});
+    payRows.push({l:"Total pay (sheet)", r:gbpMills(toMills(bd.totals.grand)), tag:"ok"});
   }
   if (payRows.length) sections.push({title:"Rate & pay", rows:payRows});
 
-  return { sections, issues, workedMin, correctH };
+  return { sections, issues };
 }
 
 function renderBreakdownReport(bd, findings, fromImage){
@@ -1300,7 +1302,7 @@ function renderBreakdownReport(bd, findings, fromImage){
   const head = findings.issues.length
     ? `<div style="font-family:var(--mono);font-size:13px;color:var(--red);font-weight:700">${findings.issues.length} thing${findings.issues.length===1?"":"s"} to query</div>`
     : `<div style="font-family:var(--mono);font-size:13px;color:var(--green);font-weight:700">Everything lines up</div>`;
-  const note = `<div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-top:12px;line-height:1.6">Route times read as clock time — 10.27 means 10h 27m. ${fromImage?"Read from a photo, so double-check the figures and dates.":""}</div>`;
+  const note = `<div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-top:12px;line-height:1.6">Route times read as decimal hours — 1.5 means 1h 30m. ${fromImage?"Read from a photo, so double-check the figures and dates.":""}</div>`;
   $("bd-report").innerHTML = `
     <div class="card">
       ${head}
@@ -1373,7 +1375,7 @@ function invoiceFromBreakdown(){
   invRows = bd.days.map(d=>({
     desc: `${d.day}${d.dateISO?" "+new Date(d.dateISO).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",year:"2-digit"}):""}`,
     comment: d.comment||"",
-    qty: d.routeMin!=null ? Math.round(d.routeMin/60*100)/100 : null,
+    qty: d.routeRaw!=null ? d.routeRaw : null,
     unit: rate, bonus: d.bonus||0, add: d.add||0, deduct: d.deduct||0
   }));
   if (bd.weekly && bd.weekly.bonus) invRows.push({ desc:"Weekly bonus", comment:bd.weekly.bonusComment||"", qty:null, unit:rate, bonus:bd.weekly.bonus, add:0, deduct:0 });
